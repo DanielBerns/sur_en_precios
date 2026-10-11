@@ -35,6 +35,32 @@ class RawStoragePort(ABC):
         """Extracts archive into daily working folder."""
         ...
 
+    @abstractmethod
+    def store_archive(self, source_archive: Path, target_date: date) -> Path:
+        """Stores or copies archive to raw/<target_date>/sepa_<target_date>.zip."""
+        ...
+
+
+class SepaDatasetPort(ABC):
+    """Port for inspecting and extracting SEPA archive components."""
+
+    @abstractmethod
+    def infer_data_date(self, archive_path: Path) -> date:
+        """Infers the price date (YYYY-MM-DD) from archive contents or name."""
+        ...
+
+    @abstractmethod
+    def list_chain_archives(self, raw_date_dir: Path) -> List[Path]:
+        """Lists all inner chain archive files or directories within a raw date folder."""
+        ...
+
+    @abstractmethod
+    def extract_member(
+        self, chain_archive: Path, member_name: str, dest_dir: Path
+    ) -> Path:
+        """Extracts a specific CSV member from a chain archive into dest_dir."""
+        ...
+
 
 class CatalogRepositoryPort(ABC):
     """Port for product and store catalog operations."""
@@ -65,6 +91,12 @@ class PriceRepositoryPort(ABC):
     def save_metrics(self, metrics: List[DailyProductMetrics]) -> None: ...
 
     @abstractmethod
+    def delete_prices_for_date(self, price_date: date) -> int: ...
+
+    @abstractmethod
+    def delete_metrics_for_date(self, metric_date: date) -> int: ...
+
+    @abstractmethod
     def get_prices_for_basket(
         self, city: str, price_date: date, eans: List[str]
     ) -> List[DailyPrice]: ...
@@ -89,6 +121,9 @@ class UserRepositoryPort(ABC):
 
     @abstractmethod
     def get_user_shopping_lists(self, user_id: int) -> List[ShoppingList]: ...
+
+    @abstractmethod
+    def get_shopping_list_by_uuid(self, uuid_str: str) -> Optional[ShoppingList]: ...
 
     @abstractmethod
     def delete_shopping_list(self, list_id: int, user_id: int) -> bool: ...

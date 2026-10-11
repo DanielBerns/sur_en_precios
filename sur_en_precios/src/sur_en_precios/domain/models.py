@@ -64,6 +64,8 @@ class ShoppingList:
     name: str
     items: List[ListItem] = field(default_factory=list)
     created_at: Optional[datetime] = None
+    is_public: bool = False
+    uuid: Optional[str] = None
 
 
 @dataclass

@@ -9,7 +9,7 @@
 **Sur en Precios** isolates core domain logic from framework, storage, and scraper details following **Hexagonal Architecture (Ports and Adapters)**:
 
 - **Pure Domain Core** (`sur_en_precios.domain`): Framework-free domain models (`Product`, `Store`, `DailyPrice`, `ShoppingList`), statistical calculators (Reference Price via Geometric Mean, Price Dispersion, percentage variations), and multi-store basket optimization.
-- **Driving Adapters** (`sur_en_precios.web` & `sur_en_precios.tools`): Public Web Portal (`public_app`), Private Admin Control Dashboard (`control_app`), and CLI tools (`run_etl`, `log_analyzer`).
+- **Driving Adapters** (`sur_en_precios.web` & `sur_en_precios.tools`): Public Web Portal (`public_app`), Private Admin Control Dashboard (`control_app`), and CLI tools (`run_harvest`, `run_etl`, `log_analyzer`).
 - **Driven Adapters** (`sur_en_precios.adapters`): Async HTTP scraper using `aiohttp`, storage adapter using `pathlib.Path`, SQLAlchemy 2.0 ORM repositories with SQLite FTS5 search, and structured JSON logger with `RotatingFileHandler`.
 
 ---
@@ -32,9 +32,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## ⚙️ Installation
 
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
 Clone the repository and install all dependencies in the local virtual environment using `uv`:
 
 ```bash
+git clone https://github.com/DanielBerns/sur_en_precios.git
 cd sur_en_precios
 uv sync
 ```
@@ -64,13 +67,18 @@ uv run python -m sur_en_precios.tools.run_etl --create
 ```yaml
 app:
   name: "Sur en Precios"
-  region: "AR-B"               # ISO 3166-2 Argentine Province Code (e.g. AR-B for Buenos Aires)
+  region: "AR-U"               # ISO 3166-2 Argentine Province Code (e.g. AR-U for Chubut, AR-B for Buenos Aires)
   debug: false
 
 database:
   public_db_filename: "public.sqlite"      # Daily swapped region price DB
   user_db_filename: "user_data.sqlite"   # User accounts & saved shopping lists DB
   control_db_filename: "control.sqlite"   # System execution & audit logs DB
+
+etl:
+  generate_sample_data: false   # Feature flag: set true to generate mock CSVs when raw SEPA data is missing
+  insert_batch_size: 10000      # Rows per bulk upsert batch
+  temp_dir: "data/tmp"          # Directory for temporary extraction
 
 scraper:
   sepa_url: "https://datos.produccion.gob.ar/dataset/sepa-precios"
@@ -86,21 +94,41 @@ logging:
 
 ---
 
-## 🚀 Running the System
+## ⚙️ Initialization
 
-### 1. Execute the Regional Data Ingestion & ETL Pipeline
+No initialization steps required. Database tables are automatically initialized on first ETL run.
 
-Processes SEPA CSV archives, calculates integer Pesos prices & Geometric Mean Reference Prices, and builds `public.sqlite` with SQLite FTS5 full-text indexing:
+---
+
+## 🚀 Execution
+
+### 1. Data Harvesting (Online or Offline Archives)
+
+Harvest daily dataset archives from the official SEPA URL or ingest local downloaded zip archives (e.g., `sepa_jueves.zip` downloaded when the web server is closed):
 
 ```bash
-# Run for target region (e.g., AR-B for Buenos Aires)
-uv run python -m sur_en_precios.tools.run_etl --region AR-B
+# Offline mode: process local downloaded ZIP archive
+uv run python -m sur_en_precios.tools.run_harvest --file ~/Downloads/sepa_jueves.zip
 
-# Specify explicit working directory and processing date
-uv run python -m sur_en_precios.tools.run_etl --workdir ./my_workdir --region AR-B --date 2026-10-09
+# Online mode: download directly from official SEPA website
+uv run python -m sur_en_precios.tools.run_harvest
 ```
 
-### 2. Launch the Public Web Portal
+Local or remote archives are automatically stored as `data/raw/<YYYY-MM-DD>/sepa_<YYYY-MM-DD>.zip` using the date inferred from the dataset.
+
+### 2. Execute Regional Data Ingestion & ETL Pipeline
+
+Processes nested chain CSV archives, filters stores by region, joins prices, computes integer Pesos prices & Geometric Mean Reference Prices, and builds `public.sqlite` with SQLite FTS5 full-text indexing:
+
+```bash
+# Run for configured region (reads region from config.yaml, e.g. AR-U)
+uv run python -m sur_en_precios.tools.run_etl
+
+# Run for specific region code or processing date
+uv run python -m sur_en_precios.tools.run_etl --region AR-U --date 2026-10-01
+```
+
+### 3. Launch the Public Web Portal
 
 Web interface localized in Argentine Spanish (`es_AR`) providing product search, saved shopping lists, and interactive basket price optimization:
 
@@ -109,7 +137,7 @@ uv run python -m sur_en_precios.web.public_app.app
 ```
 Open browser at: `http://localhost:5000`
 
-### 3. Launch the Private Admin Control Dashboard
+### 4. Launch the Private Admin Control Dashboard
 
 Private dashboard with Basic Authentication monitoring ETL job execution status, file sizes, and errors:
 
@@ -119,7 +147,7 @@ uv run python -m sur_en_precios.web.control_app.app
 Open browser at: `http://localhost:5001`  
 *(Default Credentials: `admin` / `sur_precios_2026`)*
 
-### 4. Query Execution Logs using Structured Log Analyzer
+### 5. Query Execution Logs using Structured Log Analyzer
 
 Query, filter, and summarize structured JSON execution logs recorded in `logs/sur_en_precios.log.json`:
 

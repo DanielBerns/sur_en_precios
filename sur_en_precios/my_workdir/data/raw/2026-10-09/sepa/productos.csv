@@ -1,0 +1,10 @@
+id_comercio|id_bandera|id_sucursal|id_producto|productos_ean|productos_descripcion|productos_cantidad_presentacion|productos_unidad_medida_presentacion|productos_marca|productos_precio_lista|productos_precio_referencia|productos_cantidad_referencia|productos_unidad_medida_referencia|productos_precio_unitario_promo1|productos_leyenda_promo1|productos_precio_unitario_promo2|productos_leyenda_promo2
+100|1|s1|7790001001|1|Leche Entera 1L|1|l|La Serenísima|1200.00|1200.00|1|l|||||
+100|1|s2|7790001001|1|Leche Entera 1L|1|l|La Serenísima|1150.00|1150.00|1|l|||||
+100|1|s3|7790001001|1|Leche Entera 1L|1|l|La Serenísima|1220.00|1220.00|1|l|||||
+100|1|s1|7790002002|1|Pan Lactal 500g|500|g|Bimbo|2400.00|4800.00|1|kg|||||
+100|1|s2|7790002002|1|Pan Lactal 500g|500|g|Bimbo|2250.00|4500.00|1|kg|||||
+100|1|s3|7790002002|1|Pan Lactal 500g|500|g|Bimbo|2300.00|4600.00|1|kg|||||
+100|1|s1|7790003003|1|Aceite Oliva Aerosol 120ml|120|ml|Freir|3500.00|29166.00|1|l|||||
+100|1|s2|7790003003|1|Aceite Oliva Aerosol 120ml|120|ml|Freir|3800.00|31666.00|1|l|||||
+100|1|s3|7790003003|1|Aceite Oliva Aerosol 120ml|120|ml|Freir|3450.00|28750.00|1|l|||||

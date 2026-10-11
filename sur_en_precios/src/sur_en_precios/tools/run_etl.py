@@ -1,19 +1,42 @@
 import argparse
+import re
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from sur_en_precios.adapters.database.models_public import (
-    DailyPriceModel,
+    ArticleCode,
     DailyProductMetricModel,
-    ProductModel,
-    StoreModel,
+    PointOfSale,
+    Price,
 )
 from sur_en_precios.adapters.logging import setup_application_logging
+from sur_en_precios.adapters.sepa_archive import ZipSepaDatasetAdapter
 from sur_en_precios.config import read_config
 from sur_en_precios.use_cases.process_region import ProcessAndPublishRegionUseCase
+
+
+def find_latest_raw_date(raw_dir: Path) -> Optional[date]:
+    """Finds the most recent YYYY-MM-DD raw date directory containing dataset archives."""
+    if not raw_dir.exists():
+        return None
+
+    date_regex = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    dataset_adapter = ZipSepaDatasetAdapter()
+    valid_dates: list[date] = []
+
+    for path in raw_dir.iterdir():
+        if path.is_dir() and date_regex.match(path.name):
+            if dataset_adapter.list_chain_archives(path):
+                try:
+                    valid_dates.append(date.fromisoformat(path.name))
+                except ValueError:
+                    pass
+
+    return max(valid_dates) if valid_dates else None
 
 
 def create_sample_sepa_data(extracted_dir: Path) -> None:
@@ -47,9 +70,9 @@ def create_sample_sepa_data(extracted_dir: Path) -> None:
 
 def run_etl_pipeline(
     workdir_override: Path | None = None,
-    region: str = "AR-B",
+    region: str | None = None,
     process_date_val: date | None = None,
-    create_sample_if_missing: bool = True,
+    create_sample_if_missing: bool | None = None,
 ) -> Path:
     """Runs the regional ETL pipeline and updates public.sqlite database."""
     workdir_path = (
@@ -57,44 +80,66 @@ def run_etl_pipeline(
     )
     config = read_config(workdir_override=workdir_path, should_create_override=True)
     logger = setup_application_logging(config)
+    etl_settings = config.get_etl_settings()
 
-    target_date = process_date_val or date.today()
+    target_region = region or config.get_region()
+    target_date = (
+        process_date_val or find_latest_raw_date(config.raw_dir) or date.today()
+    )
     date_str = target_date.strftime("%Y-%m-%d")
 
-    raw_extracted_dir = config.raw_dir / date_str / "sepa"
-    if not (raw_extracted_dir / "sucursales.csv").exists():
-        if create_sample_if_missing:
+    raw_date_dir = config.raw_dir / date_str
+    dataset_adapter = ZipSepaDatasetAdapter()
+    chain_archives = dataset_adapter.list_chain_archives(raw_date_dir)
+
+    should_sample = (
+        create_sample_if_missing
+        if create_sample_if_missing is not None
+        else etl_settings.generate_sample_data
+    )
+
+    if not chain_archives:
+        if should_sample:
             logger.info(
-                "Raw SEPA CSVs missing. Generating sample SEPA data...",
-                extra={"dir": str(raw_extracted_dir)},
+                "Raw SEPA archives missing. Generating sample SEPA data...",
+                extra={"dir": str(raw_date_dir / "sepa")},
             )
-            create_sample_sepa_data(raw_extracted_dir)
+            create_sample_sepa_data(raw_date_dir / "sepa")
+            raw_date_dir = raw_date_dir / "sepa"
         else:
             raise FileNotFoundError(
-                f"Raw SEPA dataset not found in {raw_extracted_dir}"
+                f"No SEPA raw dataset found in {raw_date_dir}.\n"
+                f"Please harvest data first using:\n"
+                f"  uv run python -m sur_en_precios.tools.run_harvest --file <PATH_TO_SEPA_ZIP>"
             )
 
     output_db_path = config.get_public_db_path()
 
-    use_case = ProcessAndPublishRegionUseCase(target_region=region, logger=logger)
-    use_case.execute(raw_extracted_dir, output_db_path, target_date)
+    use_case = ProcessAndPublishRegionUseCase(
+        target_region=target_region,
+        sepa_dataset_adapter=dataset_adapter,
+        batch_size=etl_settings.insert_batch_size,
+        temp_dir=config.temp_dir,
+        logger=logger,
+    )
+    use_case.execute(raw_date_dir, output_db_path, target_date)
 
-    # Output Summary Statistics
+    # Output Summary Statistics for target date
     engine = create_engine(f"sqlite:///{output_db_path}")
     with Session(engine) as session:
-        store_cnt = session.execute(select(func.count(StoreModel.id))).scalar_one()
-        prod_cnt = session.execute(select(func.count(ProductModel.ean))).scalar_one()
-        price_cnt = session.execute(
-            select(func.count(DailyPriceModel.price))
-        ).scalar_one()
+        store_cnt = session.execute(select(func.count(PointOfSale.id))).scalar_one()
+        prod_cnt = session.execute(select(func.count(ArticleCode.id))).scalar_one()
+        price_cnt = session.execute(select(func.count(Price.id))).scalar_one()
         metric_cnt = session.execute(
-            select(func.count(DailyProductMetricModel.reference_price))
+            select(func.count(DailyProductMetricModel.reference_price)).where(
+                DailyProductMetricModel.date == target_date
+            )
         ).scalar_one()
 
     print("\n==================================================")
     print("      SUR EN PRECIOS — ETL PIPELINE SUCCESS       ")
     print("==================================================")
-    print(f" Region Target     : {region}")
+    print(f" Region Target     : {target_region}")
     print(f" Date Processed    : {date_str}")
     print(f" Database Output   : {output_db_path}")
     print(f" Stores Ingested   : {store_cnt}")
@@ -111,15 +156,13 @@ def main() -> None:
         description="Run Sur en Precios Regional ETL Pipeline"
     )
     parser.add_argument("--workdir", help="Path to working directory")
-    parser.add_argument(
-        "--region", default="AR-B", help="Target region code (e.g. AR-B)"
-    )
+    parser.add_argument("--region", help="Target region code (e.g. AR-U, AR-B)")
     parser.add_argument("--date", help="Target processing date (YYYY-MM-DD)")
 
     args = parser.parse_args()
 
     workdir_path = Path(args.workdir).resolve() if args.workdir else None
-    target_date = date.fromisoformat(args.date) if args.date else date.today()
+    target_date = date.fromisoformat(args.date) if args.date else None
 
     run_etl_pipeline(
         workdir_override=workdir_path, region=args.region, process_date_val=target_date

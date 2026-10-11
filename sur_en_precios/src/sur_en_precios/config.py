@@ -32,10 +32,17 @@ class LoggingSettings(BaseModel):
     backup_count: int = 5
 
 
+class EtlSettings(BaseModel):
+    generate_sample_data: bool = False
+    temp_dir: str = "data/tmp"
+    insert_batch_size: int = 10_000
+
+
 class AppConfig(BaseModel):
     app: AppSettings = Field(default_factory=AppSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     scraper: ScraperSettings = Field(default_factory=ScraperSettings)
+    etl: EtlSettings = Field(default_factory=EtlSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
 
@@ -63,6 +70,12 @@ class Config:
         return path
 
     @property
+    def temp_dir(self) -> Path:
+        path = self._workdir / self._settings.etl.temp_dir
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
     def log_dir(self) -> Path:
         path = self._workdir / self._settings.logging.log_dir
         path.mkdir(parents=True, exist_ok=True)
@@ -85,6 +98,9 @@ class Config:
 
     def get_log_level(self) -> str:
         return self._settings.logging.level
+
+    def get_etl_settings(self) -> EtlSettings:
+        return self._settings.etl
 
     @property
     def settings(self) -> AppConfig:

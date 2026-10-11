@@ -20,15 +20,15 @@ def test_process_and_publish_region_use_case(tmp_path: Path) -> None:
 
     sucursales_csv = extracted_dir / "sucursales.csv"
     sucursales_csv.write_text(
-        "id_sucursal|sucursales_nombre|sucursales_localidad|sucursales_calle|sucursales_latitud|sucursales_longitud|sucursales_provincia\n"
-        "s1|Sucursal 1|Bahía Blanca|Av. Colon 100|-38.71|-62.26|AR-B\n",
+        "id_comercio|id_bandera|id_sucursal|sucursales_nombre|sucursales_localidad|sucursales_calle|sucursales_numero|sucursales_latitud|sucursales_longitud|sucursales_provincia\n"
+        "100|1|s1|Sucursal 1|Bahía Blanca|Av. Colon|100|-38.71|-62.26|AR-B\n",
         encoding="utf-8",
     )
 
     productos_csv = extracted_dir / "productos.csv"
     productos_csv.write_text(
-        "id_producto|productos_descripcion|productos_marca|id_sucursal|productos_precio_lista\n"
-        "779001|Aceite Oliva 120ml|Freir|s1|1250.00\n",
+        "id_comercio|id_bandera|id_sucursal|id_producto|productos_descripcion|productos_marca|productos_precio_lista\n"
+        "100|1|s1|779001|Aceite Oliva 120ml|Freir|1250.00\n",
         encoding="utf-8",
     )
 
@@ -52,6 +52,7 @@ def test_process_and_publish_region_use_case(tmp_path: Path) -> None:
 
         stores = cat_repo.get_stores_by_city("Bahía Blanca")
         assert len(stores) == 1
+        assert stores[0].id == "100-1-s1"
 
         # Test Optimize Basket Use Case against generated DB
         opt_use_case = OptimizeBasketUseCase(cat_repo, price_repo)
