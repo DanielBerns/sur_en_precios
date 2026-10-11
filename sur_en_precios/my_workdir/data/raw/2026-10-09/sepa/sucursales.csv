@@ -1,4 +1,0 @@
-id_comercio|id_bandera|id_sucursal|sucursales_nombre|sucursales_tipo|sucursales_calle|sucursales_numero|sucursales_latitud|sucursales_longitud|sucursales_observaciones|sucursales_barrio|sucursales_codigo_postal|sucursales_localidad|sucursales_provincia
-100|1|s1|Carrefour Central|Hipermercado|Av. Colón|250|-38.7183|-62.2662||Centro|8000|Bahía Blanca|AR-B
-100|1|s2|Vea Sucursal 1|Supermercado|Calle Donado|120|-38.7201|-62.2610||Centro|8000|Bahía Blanca|AR-B
-100|1|s3|Cooperativa Obrera|Supermercado|Av. Alem|450|-38.7145|-62.2589||Palihue|8000|Bahía Blanca|AR-B
