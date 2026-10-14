@@ -131,16 +131,16 @@ def test_sepa_archive_harvest_and_etl_pipeline(tmp_path: Path) -> None:
     from sqlalchemy import create_engine, select
     from sqlalchemy.orm import Session
 
-    from sur_en_precios.adapters.database.models_public import (
-        DailyPriceModel,
-        DailyProductMetricModel,
-        ProductModel,
-        StoreModel,
+    from sur_en_precios.domain.models_public import (
+        ArticleMetric,
+        ArticleNumber,
+        Price,
+        Store,
     )
 
     engine = create_engine(f"sqlite:///{db_path}")
     with Session(engine) as session:
-        stores = session.execute(select(StoreModel)).scalars().all()
+        stores = session.execute(select(Store)).scalars().all()
         # Should contain 2 stores in AR-U (1-1-100 and 2-1-100), store 2-1-200 (AR-C) excluded
         assert len(stores) == 2
         store_ids = {s.code for s in stores}
@@ -148,21 +148,21 @@ def test_sepa_archive_harvest_and_etl_pipeline(tmp_path: Path) -> None:
         chain_names = {s.chain_name for s in stores}
         assert chain_names == {"Carrefour", "La Anonima"}
 
-        products = session.execute(select(ProductModel)).scalars().all()
+        products = session.execute(select(ArticleNumber)).scalars().all()
         assert len(products) == 1
         assert products[0].ean == "779001001"
 
-        prices = session.execute(select(DailyPriceModel)).scalars().all()
+        prices = session.execute(select(Price)).scalars().all()
         # Should contain 2 prices (from AR-U stores 1-1-100 and 2-1-100)
         assert len(prices) == 2
-        price_store_ids = {p.store_id for p in prices}
+        price_store_ids = {p.store_code for p in prices}
         assert price_store_ids == {"1-1-100", "2-1-100"}
 
-        metrics = session.execute(select(DailyProductMetricModel)).scalars().all()
+        metrics = session.execute(select(ArticleMetric)).scalars().all()
         assert len(metrics) == 1
         # Geometric mean of 3000 and 3200 = round(sqrt(3000 * 3200)) = 3098
         assert metrics[0].reference_price == 3098
-        assert metrics[0].city == "Trelew"
+        assert metrics[0].city_name == "Trelew"
 
     # 4. Test Idempotence: Re-run ETL for same date
     _ = run_etl_pipeline(
@@ -173,7 +173,7 @@ def test_sepa_archive_harvest_and_etl_pipeline(tmp_path: Path) -> None:
     )
 
     with Session(engine) as session:
-        prices = session.execute(select(DailyPriceModel)).scalars().all()
+        prices = session.execute(select(Price)).scalars().all()
         assert len(prices) == 2
-        metrics = session.execute(select(DailyProductMetricModel)).scalars().all()
+        metrics = session.execute(select(ArticleMetric)).scalars().all()
         assert len(metrics) == 1

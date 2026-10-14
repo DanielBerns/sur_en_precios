@@ -10,7 +10,7 @@
 
 - **Pure Domain Core** (`sur_en_precios.domain`): Framework-free domain models (`Product`, `Store`, `DailyPrice`, `ShoppingList`), statistical calculators (Reference Price via Geometric Mean, Price Dispersion, percentage variations), and multi-store basket optimization.
 - **Driving Adapters** (`sur_en_precios.web` & `sur_en_precios.tools`): Public Web Portal (`public_app`), Private Admin Control Dashboard (`control_app`), and CLI tools (`run_etl`, `log_analyzer`).
-- **Driven Adapters** (`sur_en_precios.adapters`): Async HTTP scraper using `aiohttp`, storage adapter using `pathlib.Path`, SQLAlchemy 2.0 ORM repositories with SQLite FTS5 search, and structured JSON logger with `RotatingFileHandler`.
+- **Driven Adapters** (`sur_en_precios.adapters`): Async HTTP scraper using `aiohttp`, storage adapter using `pathlib.Path`, SQLAlchemy 2.0 ORM repositories with indexed search, and structured JSON logger with `RotatingFileHandler`.
 
 ---
 
@@ -90,7 +90,7 @@ logging:
 
 ### 1. Execute the Regional Data Ingestion & ETL Pipeline
 
-Processes SEPA CSV archives, calculates integer Pesos prices & Geometric Mean Reference Prices, and builds `public.sqlite` with SQLite FTS5 full-text indexing:
+Processes SEPA CSV archives, calculates integer Pesos prices & Geometric Mean Reference Prices, and builds `public.sqlite` managed entirely via SQLAlchemy 2.0 ORM:
 
 ```bash
 # Run for target region (e.g., AR-B for Buenos Aires)

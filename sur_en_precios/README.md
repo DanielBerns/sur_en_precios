@@ -10,7 +10,7 @@
 
 - **Pure Domain Core** (`sur_en_precios.domain`): Framework-free domain models (`Product`, `Store`, `DailyPrice`, `ShoppingList`), statistical calculators (Reference Price via Geometric Mean, Price Dispersion, percentage variations), and multi-store basket optimization.
 - **Driving Adapters** (`sur_en_precios.web` & `sur_en_precios.tools`): Public Web Portal (`public_app`), Private Admin Control Dashboard (`control_app`), and CLI tools (`run_harvest`, `run_etl`, `log_analyzer`).
-- **Driven Adapters** (`sur_en_precios.adapters`): Async HTTP scraper using `aiohttp`, storage adapter using `pathlib.Path`, SQLAlchemy 2.0 ORM repositories with SQLite FTS5 search, and structured JSON logger with `RotatingFileHandler`.
+- **Driven Adapters** (`sur_en_precios.adapters`): Async HTTP scraper using `aiohttp`, storage adapter using `pathlib.Path`, SQLAlchemy 2.0 ORM repositories with indexed search, and structured JSON logger with `RotatingFileHandler`.
 
 ---
 
@@ -102,23 +102,25 @@ No initialization steps required. Database tables are automatically initialized 
 
 ## 🚀 Execution
 
-### 1. Data Harvesting (Online or Offline Archives)
+### 1. Data Harvesting (Online Web Portal or Local Archives)
 
-Harvest daily dataset archives from the official SEPA URL or ingest local downloaded zip archives (e.g., `sepa_jueves.zip` downloaded when the web server is closed):
+Scrape and harvest daily dataset archives from the official SEPA website (`https://datos.produccion.gob.ar/dataset/sepa-precios`) or ingest local archives:
 
 ```bash
-# Offline mode: process local downloaded ZIP archive
-uv run python -m sur_en_precios.tools.run_harvest --file ~/Downloads/sepa_jueves.zip
-
-# Online mode: download directly from official SEPA website
+# Online mode: downloads the SEPA dataset webpage, scans for new zip archives, and downloads them automatically
 uv run python -m sur_en_precios.tools.run_harvest
+
+# Specify a custom working directory or create default configuration
+uv run python -m sur_en_precios.tools.run_harvest --workdir ~/Info/sur_en_precios --create
 ```
 
-Local or remote archives are automatically stored as `data/raw/<YYYY-MM-DD>/sepa_<YYYY-MM-DD>.zip` using the date inferred from the dataset.
+New remote archives are identified by comparing discovered dates against existing archives in `data/raw/`. Discovered archives are automatically downloaded, verified, and stored as `data/raw/<YYYY-MM-DD>/sepa_<YYYY-MM-DD>.zip` and extracted to `data/raw/<YYYY-MM-DD>/sepa_<YYYY-MM-DD>/`.
+
+For offline mode, set `scraper.local_archive_file` in `config.yaml` to process a local `.zip` file.
 
 ### 2. Execute Regional Data Ingestion & ETL Pipeline
 
-Processes nested chain CSV archives, filters stores by region, joins prices, computes integer Pesos prices & Geometric Mean Reference Prices, and builds `public.sqlite` with SQLite FTS5 full-text indexing:
+Processes nested chain CSV archives, filters stores by region, joins prices, computes integer Pesos prices & Geometric Mean Reference Prices, and builds `public.sqlite` managed entirely via SQLAlchemy 2.0 ORM:
 
 ```bash
 # Run for configured region (reads region from config.yaml, e.g. AR-U)

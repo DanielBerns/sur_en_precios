@@ -23,6 +23,8 @@ class ScraperSettings(BaseModel):
     sepa_url: str = "https://datos.produccion.gob.ar/dataset/sepa-precios"
     raw_storage_dir: str = "data/raw"
     timeout_seconds: int = 120
+    target_date: str | None = None
+    local_archive_file: str | None = None
 
 
 class LoggingSettings(BaseModel):
@@ -33,9 +35,17 @@ class LoggingSettings(BaseModel):
 
 
 class EtlSettings(BaseModel):
-    generate_sample_data: bool = False
     temp_dir: str = "data/tmp"
     insert_batch_size: int = 10_000
+    target_date: str | None = None
+
+
+class LogAnalyzerSettings(BaseModel):
+    level: str | None = None
+    search: str | None = None
+    date: str | None = None
+    limit: int = 50
+    summary: bool = False
 
 
 class AppConfig(BaseModel):
@@ -44,6 +54,7 @@ class AppConfig(BaseModel):
     scraper: ScraperSettings = Field(default_factory=ScraperSettings)
     etl: EtlSettings = Field(default_factory=EtlSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    log_analyzer: LogAnalyzerSettings = Field(default_factory=LogAnalyzerSettings)
 
 
 class Config:
@@ -101,6 +112,12 @@ class Config:
 
     def get_etl_settings(self) -> EtlSettings:
         return self._settings.etl
+
+    def get_scraper_settings(self) -> ScraperSettings:
+        return self._settings.scraper
+
+    def get_log_analyzer_settings(self) -> LogAnalyzerSettings:
+        return self._settings.log_analyzer
 
     @property
     def settings(self) -> AppConfig:

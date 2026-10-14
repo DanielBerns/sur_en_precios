@@ -353,7 +353,7 @@ Testing adheres to `quality-assurance.md` standards using **Ruff**, **Mypy**, an
    uv run pytest
    ```
    - **Unit Tests**: Test core domain logic (`BasketOptimizer` total calculation, geometric mean calculation, price dispersion math, Pydantic configuration parser).
-   - **Integration Tests**: Test SQLAlchemy 2.0 repository CRUD operations, SQLite FTS5 search queries, and mock `aiohttp` harvester streaming.
+   - **Integration Tests**: Test SQLAlchemy 2.0 repository CRUD operations, product search queries, and mock `aiohttp` harvester streaming.
 
 ---
 

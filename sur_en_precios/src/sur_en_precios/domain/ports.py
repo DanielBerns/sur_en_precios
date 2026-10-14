@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from sur_en_precios.domain.models import (
-    DailyPrice,
-    DailyProductMetrics,
-    Product,
-    ShoppingList,
+from sur_en_precios.domain.models_public import (
+    ArticleCard,
+    ArticleMetric,
+    Price,
     Store,
+)
+from sur_en_precios.domain.models_user import (
+    Basket,
     User,
 )
 
@@ -19,6 +21,25 @@ class ScraperPort(ABC):
     @abstractmethod
     async def fetch_daily_dataset(self, target_dir: Path) -> Path:
         """Downloads the daily dataset archive into target_dir using pathlib.Path."""
+        ...
+
+    @abstractmethod
+    async def fetch_webpage(self, url: Optional[str] = None) -> str:
+        """Fetches the webpage HTML content asynchronously."""
+        ...
+
+    @abstractmethod
+    async def download_file(
+        self, file_url: str, target_dir: Path, filename: Optional[str] = None
+    ) -> Path:
+        """Downloads a specific remote file into target_dir."""
+        ...
+
+    @abstractmethod
+    async def discover_dataset_archives(
+        self, url: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Discovers dataset archive resources available on the portal webpage."""
         ...
 
 
@@ -63,19 +84,21 @@ class SepaDatasetPort(ABC):
 
 
 class CatalogRepositoryPort(ABC):
-    """Port for product and store catalog operations."""
+    """Port for article and store catalog operations."""
 
     @abstractmethod
-    def save_products(self, products: List[Product]) -> None: ...
+    def save_articles(self, articles: List[ArticleCard]) -> None: ...
 
     @abstractmethod
     def save_stores(self, stores: List[Store]) -> None: ...
 
     @abstractmethod
-    def search_products(self, query: str, limit: int = 50) -> List[Product]: ...
+    def search_articles(
+        self, query: str, limit: int = 50, mode: str = "fuzzy"
+    ) -> List[ArticleCard]: ...
 
     @abstractmethod
-    def get_product_by_ean(self, ean: str) -> Optional[Product]: ...
+    def get_article_by_ean(self, ean: str) -> Optional[ArticleCard]: ...
 
     @abstractmethod
     def get_stores_by_city(self, city: str) -> List[Store]: ...
@@ -85,10 +108,10 @@ class PriceRepositoryPort(ABC):
     """Port for daily prices and statistical metrics queries."""
 
     @abstractmethod
-    def save_prices(self, prices: List[DailyPrice]) -> None: ...
+    def save_prices(self, prices: List[Price]) -> None: ...
 
     @abstractmethod
-    def save_metrics(self, metrics: List[DailyProductMetrics]) -> None: ...
+    def save_metrics(self, metrics: List[ArticleMetric]) -> None: ...
 
     @abstractmethod
     def delete_prices_for_date(self, price_date: date) -> int: ...
@@ -99,7 +122,7 @@ class PriceRepositoryPort(ABC):
     @abstractmethod
     def get_prices_for_basket(
         self, city: str, price_date: date, eans: List[str]
-    ) -> List[DailyPrice]: ...
+    ) -> List[Price]: ...
 
     @abstractmethod
     def get_reference_prices(
@@ -108,7 +131,7 @@ class PriceRepositoryPort(ABC):
 
 
 class UserRepositoryPort(ABC):
-    """Port for user accounts and shopping list management."""
+    """Port for user accounts and basket management."""
 
     @abstractmethod
     def create_user(self, email: str, password_hash: str) -> User: ...
@@ -117,13 +140,13 @@ class UserRepositoryPort(ABC):
     def get_user_by_email(self, email: str) -> Optional[User]: ...
 
     @abstractmethod
-    def save_shopping_list(self, shopping_list: ShoppingList) -> ShoppingList: ...
+    def save_basket(self, basket: Basket) -> Basket: ...
 
     @abstractmethod
-    def get_user_shopping_lists(self, user_id: int) -> List[ShoppingList]: ...
+    def get_user_baskets(self, user_id: int) -> List[Basket]: ...
 
     @abstractmethod
-    def get_shopping_list_by_uuid(self, uuid_str: str) -> Optional[ShoppingList]: ...
+    def get_basket_by_uuid(self, uuid_str: str) -> Optional[Basket]: ...
 
     @abstractmethod
-    def delete_shopping_list(self, list_id: int, user_id: int) -> bool: ...
+    def delete_basket(self, basket_id: int, user_id: int) -> bool: ...

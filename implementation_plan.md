@@ -81,7 +81,7 @@ Implement business use cases orchestrating domain services and ports.
 - Downloads daily `sepa.zip` archive, unpacks `comercio.csv`, `sucursales.csv`, `productos.csv`, and reports execution metrics to Component 2 API.
 
 #### [NEW] [use_cases/process_region.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/src/sur_en_precios/use_cases/process_region.py)
-- Parses pipe-delimited CSVs via DuckDB, calculates integer Pesos prices & geometric mean metrics, builds regional `public_<region>.sqlite`, sets up SQLite FTS5 product search index, and performs atomic SFTP/SSH deployment.
+- Parses pipe-delimited CSVs via DuckDB, calculates integer Pesos prices & geometric mean metrics, builds regional `public_<region>.sqlite` via SQLAlchemy 2.0 ORM, and performs atomic SFTP/SSH deployment.
 
 #### [NEW] [use_cases/optimize_basket.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/src/sur_en_precios/use_cases/optimize_basket.py)
 - Executes basket price search, store price matrix generation with green/red/geometric mean badges, and single store vs item-by-item optimal breakdown.
@@ -96,7 +96,7 @@ Construct light Flask applications with HTML5 + Vanilla JS/CSS and Flask-Babel `
 - Private control website with Basic Auth, dashboard table showing scraper/ETL run logs, file sizes, execution times, error alerts, and API logging endpoints (`/api/logs/scraper`, `/api/logs/processor`).
 
 #### [NEW] [web/public_app/app.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/src/sur_en_precios/web/public_app/app.py)
-- Public user portal with Flask-Babel (`es_AR`), user registration/login, FTS5 product search with facets, saved shopping lists, interactive basket price optimizer, store price matrix grid, and price evolution charts.
+- Public user portal with Flask-Babel (`es_AR`), user registration/login, indexed product search with facets, saved shopping lists, interactive basket price optimizer, store price matrix grid, and price evolution charts.
 
 #### [NEW] [web/public_app/translations/es_AR/LC_MESSAGES/messages.po](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/src/sur_en_precios/web/public_app/translations/es_AR/LC_MESSAGES/messages.po)
 - Spanish translation catalog covering all UI labels, button texts, table headers, and status badges.
@@ -117,7 +117,7 @@ Build comprehensive Pytest unit and integration tests.
 - Tests for min, max, median, geometric mean, price dispersion, and 7d/30d/90d percentage variation calculation logic.
 
 #### [NEW] [tests/integration/test_sqlalchemy_repos.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/tests/integration/test_sqlalchemy_repos.py)
-- Integration tests verifying SQLAlchemy 2.0 models, repository methods, and FTS5 full-text search against temporary SQLite databases.
+- Integration tests verifying SQLAlchemy 2.0 models and repository methods against temporary SQLite databases.
 
 #### [NEW] [tests/integration/test_aiohttp_harvester.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/tests/integration/test_aiohttp_harvester.py)
 - Integration tests using a mock HTTP server to test `AiohttpScraperAdapter` downloading and error handling.
@@ -142,7 +142,7 @@ uv run pytest
 
 ### Manual Verification
 1. **Scraper Harvester**: Execute `HarvestDailyDataUseCase` against sample SEPA test files and verify raw `.zip` extraction under `data/raw/`.
-2. **ETL Processor**: Run `ProcessAndPublishRegionUseCase` to generate `public.sqlite` and verify that prices are stored as integer Pesos Argentinos and FTS5 table is indexed.
+2. **ETL Processor**: Run `ProcessAndPublishRegionUseCase` to generate `public.sqlite` and verify that prices are stored as integer Pesos Argentinos and database schema matches SQLAlchemy ORM.
 3. **Web Applications**: Launch Flask public app and verify:
    - UI text rendered in Argentine Spanish (`es_AR`) with zero missing translation keys.
    - Product search returns fast matches.

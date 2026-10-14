@@ -1,19 +1,31 @@
+import logging
 import math
 import statistics
+from dataclasses import dataclass
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
 
 from sur_en_precios.domain.models import (
     BasketOptimizationResult,
-    DailyPrice,
-    DailyProductMetrics,
     ItemBestPrice,
-    ListItem,
-    Product,
-    Store,
     StoreBasketTotal,
     StoreItemPrice,
 )
+from sur_en_precios.domain.models_public import (
+    ArticleCard,
+    ArticleDescription,
+    ArticleMetric,
+    ArticleNumber,
+    City,
+    Price,
+    Store,
+    Timestamp,
+)
+from sur_en_precios.domain.models_user import Basket, BasketItem
+
+logger = logging.getLogger("sur_en_precios.services")
 
 
 class PriceMetricsCalculator:
@@ -40,18 +52,22 @@ class PriceMetricsCalculator:
         ean: str,
         city: str,
         prices: List[int],
-        ref_price_7d_ago: Optional[int] = None,
-        ref_price_30d_ago: Optional[int] = None,
-        ref_price_90d_ago: Optional[int] = None,
-    ) -> DailyProductMetrics:
+    ) -> ArticleMetric:
         """Computes daily price metrics for a product in a city."""
+        timestamp = Timestamp(value=metric_date)
+        article_number = ArticleNumber(ean=ean)
+        city_entity = City(name=city)
+
         if not prices:
-            return DailyProductMetrics(metric_date=metric_date, ean=ean, city=city)
+            return ArticleMetric(
+                timestamp=timestamp,
+                article_number=article_number,
+                city=city_entity,
+            )
 
         sorted_prices = sorted(prices)
         min_p = sorted_prices[0]
         max_p = sorted_prices[-1]
-        median_p = round(statistics.median(sorted_prices))
         ref_p = cls.calculate_reference_price(sorted_prices)
 
         # Price dispersion: stddev / mean
@@ -61,35 +77,14 @@ class PriceMetricsCalculator:
             if mean_val > 0:
                 dispersion = round(statistics.stdev(sorted_prices) / mean_val, 4)
 
-        # Percentage changes based on Reference Price
-        pct_7d = None
-        if ref_p is not None and ref_price_7d_ago and ref_price_7d_ago > 0:
-            pct_7d = round(((ref_p - ref_price_7d_ago) / ref_price_7d_ago) * 100.0, 2)
-
-        pct_30d = None
-        if ref_p is not None and ref_price_30d_ago and ref_price_30d_ago > 0:
-            pct_30d = round(
-                ((ref_p - ref_price_30d_ago) / ref_price_30d_ago) * 100.0, 2
-            )
-
-        pct_90d = None
-        if ref_p is not None and ref_price_90d_ago and ref_price_90d_ago > 0:
-            pct_90d = round(
-                ((ref_p - ref_price_90d_ago) / ref_price_90d_ago) * 100.0, 2
-            )
-
-        return DailyProductMetrics(
-            metric_date=metric_date,
-            ean=ean,
-            city=city,
+        return ArticleMetric(
+            timestamp=timestamp,
+            article_number=article_number,
+            city=city_entity,
             min_price=min_p,
             max_price=max_p,
-            median_price=median_p,
             reference_price=ref_p,
             price_dispersion=dispersion,
-            pct_change_7d=pct_7d,
-            pct_change_30d=pct_30d,
-            pct_change_90d=pct_90d,
         )
 
 
@@ -100,31 +95,62 @@ class BasketOptimizerService:
     def optimize_basket(
         city: str,
         calc_date: date,
-        requested_items: List[ListItem],
-        products_map: Dict[str, Product],
+        requested_items: List[BasketItem],
+        products_map: Dict[str, Any],
         stores: List[Store],
-        prices: List[DailyPrice],
+        prices: List[Price],
         reference_prices: Dict[str, int],
     ) -> BasketOptimizationResult:
         """Optimizes a shopping basket across city stores for a target date."""
-        # Index prices: (store_id, ean) -> price
+        # Filter active (selected) items; None defaults to True
+        active_items = [
+            item
+            for item in requested_items
+            if getattr(item, "selected", True) is not False
+        ]
+        total_requested_count = len(active_items)
+
+        # Index prices: (store_identifier, ean) -> price
         price_lookup: Dict[Tuple[str, str], int] = {}
         # Track city-wide min and max prices per product
         product_min_price: Dict[str, int] = {}
         product_max_price: Dict[str, int] = {}
 
         for p in prices:
-            price_lookup[(p.store_id, p.ean)] = p.price
+            p_ean = str(getattr(p, "ean", "") or "")
+            amt_val = getattr(p, "price", None)
+            if amt_val is None:
+                amt_val = getattr(p, "amount", 0)
+            amt: int = int(amt_val) if amt_val is not None else 0
 
-            if p.ean not in product_min_price or p.price < product_min_price[p.ean]:
-                product_min_price[p.ean] = p.price
-            if p.ean not in product_max_price or p.price > product_max_price[p.ean]:
-                product_max_price[p.ean] = p.price
+            s_id = getattr(p, "store_id", None)
+            if s_id is not None:
+                price_lookup[(str(s_id), p_ean)] = amt
+            s_code = getattr(p, "store_code", None)
+            if s_code:
+                price_lookup[(str(s_code), p_ean)] = amt
+            if hasattr(p, "store") and p.store:
+                if getattr(p.store, "code", None):
+                    price_lookup[(str(p.store.code), p_ean)] = amt
+                if getattr(p.store, "id", None) is not None:
+                    price_lookup[(str(p.store.id), p_ean)] = amt
 
-        total_requested_count = len(requested_items)
+            if p_ean not in product_min_price or amt < product_min_price[p_ean]:
+                product_min_price[p_ean] = amt
+            if p_ean not in product_max_price or amt > product_max_price[p_ean]:
+                product_max_price[p_ean] = amt
 
         complete_stores: List[StoreBasketTotal] = []
         partial_stores: List[StoreBasketTotal] = []
+
+        def get_store_price(st: Any, ean: str) -> Optional[int]:
+            st_code = getattr(st, "code", None)
+            if st_code and (str(st_code), ean) in price_lookup:
+                return price_lookup[(str(st_code), ean)]
+            st_id = getattr(st, "id", None)
+            if st_id is not None and (str(st_id), ean) in price_lookup:
+                return price_lookup[(str(st_id), ean)]
+            return None
 
         # Evaluate each store
         for store in stores:
@@ -132,13 +158,21 @@ class BasketOptimizerService:
             total_basket_price = 0
             matched_count = 0
 
-            for item in requested_items:
+            for item in active_items:
                 ean = item.ean
-                item_price = price_lookup.get((store.id, ean))
+                item_price = get_store_price(store, ean)
 
                 if item_price is not None:
                     matched_count += 1
-                    total_basket_price += item_price * item.quantity
+                    num = getattr(item, "numerator", 1) or 1
+                    den = getattr(item, "denominator", 1) or 1
+                    if den == 0:
+                        logger.error(
+                            "Denominator for item %s is 0, defaulting to 1", ean
+                        )
+                        den = 1
+                    effective_item_price = round(item_price * item.quantity * num / den)
+                    total_basket_price += effective_item_price
 
                     is_lowest = item_price == product_min_price.get(ean)
                     is_highest = item_price == product_max_price.get(ean)
@@ -154,7 +188,9 @@ class BasketOptimizerService:
                     )
 
             if matched_count > 0:
-                is_complete = matched_count == total_requested_count
+                is_complete = (matched_count == total_requested_count) and (
+                    total_requested_count > 0
+                )
                 basket_total = StoreBasketTotal(
                     store=store,
                     total_price=total_basket_price,
@@ -176,28 +212,32 @@ class BasketOptimizerService:
 
         best_single = complete_stores[0] if complete_stores else None
 
-        # Compute item-by-item optimal (cheapest store per item)
+        # Compute item-by-item optimal (cheapest store per active item)
         item_by_item_optimal: List[ItemBestPrice] = []
-        store_map = {s.id: s for s in stores}
 
-        for item in requested_items:
+        for item in active_items:
             ean = item.ean
-            product = products_map.get(ean, Product(ean=ean, name=f"Product {ean}"))
-            cheapest_store_id: Optional[str] = None
+            product = products_map.get(ean)
+            if product is None:
+                product = ArticleCard(
+                    article_number=ArticleNumber(ean=ean),
+                    description=ArticleDescription(content=f"Producto {ean}"),
+                )
+            cheapest_store: Optional[Store] = None
             cheapest_price: Optional[int] = None
 
             for store in stores:
-                price = price_lookup.get((store.id, ean))
+                price = get_store_price(store, ean)
                 if price is not None:
                     if cheapest_price is None or price < cheapest_price:
                         cheapest_price = price
-                        cheapest_store_id = store.id
+                        cheapest_store = store
 
-            if cheapest_store_id and cheapest_price is not None:
+            if cheapest_store is not None and cheapest_price is not None:
                 item_by_item_optimal.append(
                     ItemBestPrice(
                         product=product,
-                        cheapest_store=store_map[cheapest_store_id],
+                        cheapest_store=cheapest_store,
                         price=cheapest_price,
                     )
                 )
@@ -211,4 +251,287 @@ class BasketOptimizerService:
             complete_stores=complete_stores,
             partial_stores=partial_stores,
             reference_prices=reference_prices,
+        )
+
+
+def levenshtein_distance(s1: str, s2: str) -> int:
+    """Computes the Levenshtein edit distance between two strings."""
+    if s1 == s2:
+        return 0
+    if not s1:
+        return len(s2)
+    if not s2:
+        return len(s1)
+
+    if len(s1) > len(s2):
+        s1, s2 = s2, s1
+
+    previous_row = list(range(len(s1) + 1))
+    for i, c2 in enumerate(s2):
+        current_row = [i + 1] * (len(s1) + 1)
+        for j, c1 in enumerate(s1):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row[j + 1] = min(insertions, deletions, substitutions)
+        previous_row = current_row
+
+    return previous_row[-1]
+
+
+def fuzzy_similarity_ratio(query: str, target: str) -> float:
+    """Computes a normalized similarity score in [0.0, 1.0] between query and target."""
+    q = query.strip().lower()
+    t = target.strip().lower()
+    if not q or not t:
+        return 0.0
+    if q == t:
+        return 1.0
+    if q in t:
+        return max(0.7, len(q) / len(t))
+
+    dist = levenshtein_distance(q, t)
+    max_len = max(len(q), len(t))
+    if max_len == 0:
+        return 1.0
+    return max(0.0, 1.0 - (dist / max_len))
+
+
+class YamlValidationError(Exception):
+    """Raised when uploaded or imported YAML fails syntax or business validation."""
+
+    pass
+
+
+@dataclass
+class ParsedBasketItem:
+    ean: str
+    quantity: int = 1
+    selected: bool = True
+    numerator: int = 1
+    denominator: int = 1
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    category: Optional[str] = None
+
+
+@dataclass
+class ParsedBasket:
+    name: str
+    is_public: bool
+    items: List[ParsedBasketItem]
+    warnings: List[str]
+
+
+class BasketYamlService:
+    """Service for exporting and importing baskets in YAML format with extensive error checking."""
+
+    @staticmethod
+    def export_to_yaml(
+        basket: Basket,
+        articles_metadata: Optional[Dict[str, ArticleCard]] = None,
+    ) -> str:
+        """Serializes a Basket entity to standard YAML."""
+        articles_metadata = articles_metadata or {}
+        items_payload = []
+        for item in basket.items:
+            art = articles_metadata.get(item.ean)
+            item_dict: Dict[str, Any] = {
+                "ean": str(item.ean),
+                "quantity": int(getattr(item, "quantity", 1)),
+                "selected": bool(getattr(item, "selected", True)),
+                "numerator": int(getattr(item, "numerator", 1)),
+                "denominator": int(getattr(item, "denominator", 1)),
+            }
+            if art:
+                if hasattr(art, "name") and art.name:
+                    item_dict["name"] = art.name
+                if hasattr(art, "brand_name") and art.brand_name:
+                    item_dict["brand"] = art.brand_name
+                if hasattr(art, "category_name") and art.category_name:
+                    item_dict["category"] = art.category_name
+            items_payload.append(item_dict)
+
+        payload = {
+            "version": "1.0",
+            "basket": {
+                "name": str(basket.name),
+                "uuid": str(basket.uuid) if getattr(basket, "uuid", None) else "",
+                "is_public": bool(getattr(basket, "is_public", False)),
+                "created_at": (
+                    basket.created_at.isoformat()
+                    if getattr(basket, "created_at", None)
+                    else ""
+                ),
+                "items": items_payload,
+            },
+        }
+        header = "# Sur en Precios — Canasta de Compras\n"
+        return header + yaml.dump(payload, allow_unicode=True, sort_keys=False)
+
+    @classmethod
+    def import_from_yaml(
+        cls,
+        yaml_content: str,
+        catalog_eans: Optional[set[str]] = None,
+    ) -> ParsedBasket:
+        """
+        Parses and validates an uploaded YAML basket string.
+        Fails fast with detailed error messages on invalid syntax or schema violations.
+        """
+        warnings: List[str] = []
+        if not yaml_content or not yaml_content.strip():
+            logger.error("YAML import error: content is empty")
+            raise YamlValidationError("El archivo YAML está vacío.")
+
+        try:
+            data = yaml.safe_load(yaml_content)
+        except yaml.YAMLError as exc:
+            logger.error("YAML syntax error: %s", exc)
+            problem = getattr(exc, "problem", str(exc))
+            mark = getattr(exc, "problem_mark", None)
+            if mark:
+                raise YamlValidationError(
+                    f"Error de sintaxis YAML en línea {mark.line + 1}, columna {mark.column + 1}: {problem}"
+                )
+            raise YamlValidationError(f"Error de sintaxis YAML: {problem}")
+
+        if not isinstance(data, dict):
+            logger.error("YAML structure error: root is not a dictionary")
+            raise YamlValidationError(
+                "Estructura inválida: El archivo YAML debe ser un objeto/mapeo."
+            )
+
+        basket_data = data.get("basket")
+        if not basket_data or not isinstance(basket_data, dict):
+            logger.error("YAML structure error: missing 'basket' mapping")
+            raise YamlValidationError(
+                "Estructura inválida: Falta la sección principal 'basket'."
+            )
+
+        name = str(basket_data.get("name", "")).strip()
+        if not name:
+            logger.error("YAML validation error: basket name is empty")
+            raise YamlValidationError(
+                "El nombre de la canasta ('name') es obligatorio y no puede estar vacío."
+            )
+        if len(name) > 120:
+            logger.error("YAML validation error: basket name exceeds 120 chars")
+            raise YamlValidationError(
+                "El nombre de la canasta no puede exceder los 120 caracteres."
+            )
+
+        is_public = bool(basket_data.get("is_public", False))
+
+        raw_items = basket_data.get("items")
+        if not raw_items or not isinstance(raw_items, list):
+            logger.error("YAML validation error: 'items' missing or empty")
+            raise YamlValidationError(
+                "La canasta debe contener una lista no vacía de artículos en 'items'."
+            )
+
+        parsed_items: List[ParsedBasketItem] = []
+        seen_eans: set[str] = set()
+
+        for idx, item in enumerate(raw_items, start=1):
+            if not isinstance(item, dict):
+                logger.error("YAML item %d is not a dict", idx)
+                raise YamlValidationError(
+                    f"El artículo #{idx} no tiene un formato válido (debe ser un objeto)."
+                )
+
+            ean_raw = item.get("ean")
+            if ean_raw is None:
+                logger.error("YAML item %d missing ean", idx)
+                raise YamlValidationError(
+                    f"El artículo #{idx} no tiene el código 'ean'."
+                )
+
+            ean = str(ean_raw).strip()
+            if not ean.isdigit() or not (6 <= len(ean) <= 14):
+                logger.error("YAML item %d invalid ean: %s", idx, ean)
+                raise YamlValidationError(
+                    f"El artículo #{idx} tiene un código EAN inválido ('{ean}'). Debe contener entre 6 y 14 dígitos."
+                )
+
+            if ean in seen_eans:
+                warnings.append(
+                    f"El código EAN {ean} apareció duplicado en el archivo. Se consolidó su cantidad."
+                )
+                existing_item = next(it for it in parsed_items if it.ean == ean)
+                qty_raw = item.get("quantity", 1)
+                try:
+                    qty = int(qty_raw)
+                    if qty > 0:
+                        existing_item.quantity += qty
+                except (ValueError, TypeError):
+                    pass
+                continue
+
+            seen_eans.add(ean)
+
+            try:
+                quantity = int(item.get("quantity", 1))
+                if quantity <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                logger.error("YAML item %d invalid quantity", idx)
+                raise YamlValidationError(
+                    f"El artículo #{idx} (EAN {ean}) tiene una cantidad inválida. Debe ser un entero mayor o igual a 1."
+                )
+
+            selected = bool(item.get("selected", True))
+
+            try:
+                numerator = int(item.get("numerator", 1))
+                if numerator <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                logger.error("YAML item %d invalid numerator", idx)
+                raise YamlValidationError(
+                    f"El artículo #{idx} (EAN {ean}) tiene un 'numerator' inválido. Debe ser un entero mayor o igual a 1."
+                )
+
+            try:
+                denominator = int(item.get("denominator", 1))
+                if denominator <= 0:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                logger.error("YAML item %d invalid denominator (zero or negative)", idx)
+                raise YamlValidationError(
+                    f"El artículo #{idx} (EAN {ean}) tiene un 'denominator' inválido. No puede ser cero ni negativo."
+                )
+
+            item_name = str(item.get("name", "")).strip() or None
+            item_brand = str(item.get("brand", "")).strip() or None
+            item_cat = str(item.get("category", "")).strip() or None
+
+            if catalog_eans is not None and ean not in catalog_eans:
+                warnings.append(
+                    f"El artículo con EAN {ean} ({item_name or 'Sin descripción'}) no se encuentra en el catálogo regional actual."
+                )
+
+            parsed_items.append(
+                ParsedBasketItem(
+                    ean=ean,
+                    quantity=quantity,
+                    selected=selected,
+                    numerator=numerator,
+                    denominator=denominator,
+                    name=item_name,
+                    brand=item_brand,
+                    category=item_cat,
+                )
+            )
+
+        if not parsed_items:
+            raise YamlValidationError(
+                "No se encontraron artículos válidos para importar en la canasta."
+            )
+
+        return ParsedBasket(
+            name=name,
+            is_public=is_public,
+            items=parsed_items,
+            warnings=warnings,
         )

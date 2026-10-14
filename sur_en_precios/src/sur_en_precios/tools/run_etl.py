@@ -1,5 +1,6 @@
 import argparse
 import re
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -7,16 +8,18 @@ from typing import Optional
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
-from sur_en_precios.adapters.database.models_public import (
-    ArticleCode,
-    DailyProductMetricModel,
-    PointOfSale,
-    Price,
-)
 from sur_en_precios.adapters.logging import setup_application_logging
 from sur_en_precios.adapters.sepa_archive import ZipSepaDatasetAdapter
 from sur_en_precios.config import read_config
-from sur_en_precios.use_cases.process_region import ProcessAndPublishRegionUseCase
+from sur_en_precios.domain.models_public import (
+    ArticleCard,
+    ArticleMetric,
+    ArticleNumber,
+    City,
+    Price,
+    Store,
+    Timestamp,
+)
 
 
 def find_latest_raw_date(raw_dir: Path) -> Optional[date]:
@@ -70,7 +73,9 @@ def create_sample_sepa_data(extracted_dir: Path) -> None:
 
 def run_etl_pipeline(
     workdir_override: Path | None = None,
+    should_create_override: bool | None = None,
     region: str | None = None,
+    process_date_value: date | None = None,
     process_date_val: date | None = None,
     create_sample_if_missing: bool | None = None,
 ) -> Path:
@@ -78,13 +83,32 @@ def run_etl_pipeline(
     workdir_path = (
         workdir_override or (Path.home() / "Info" / "sur_en_precios").resolve()
     )
-    config = read_config(workdir_override=workdir_path, should_create_override=True)
+    should_create = (
+        should_create_override if should_create_override is not None else True
+    )
+    config = read_config(
+        workdir_override=workdir_path, should_create_override=should_create
+    )
     logger = setup_application_logging(config)
     etl_settings = config.get_etl_settings()
 
     target_region = region or config.get_region()
+
+    configured_date = None
+    if etl_settings.target_date:
+        try:
+            configured_date = date.fromisoformat(etl_settings.target_date)
+        except ValueError:
+            logger.warning(
+                f"Invalid date format in config etl.target_date: '{etl_settings.target_date}'"
+            )
+
     target_date = (
-        process_date_val or find_latest_raw_date(config.raw_dir) or date.today()
+        process_date_val
+        or process_date_value
+        or configured_date
+        or find_latest_raw_date(config.raw_dir)
+        or date.today()
     )
     date_str = target_date.strftime("%Y-%m-%d")
 
@@ -92,14 +116,8 @@ def run_etl_pipeline(
     dataset_adapter = ZipSepaDatasetAdapter()
     chain_archives = dataset_adapter.list_chain_archives(raw_date_dir)
 
-    should_sample = (
-        create_sample_if_missing
-        if create_sample_if_missing is not None
-        else etl_settings.generate_sample_data
-    )
-
     if not chain_archives:
-        if should_sample:
+        if create_sample_if_missing:
             logger.info(
                 "Raw SEPA archives missing. Generating sample SEPA data...",
                 extra={"dir": str(raw_date_dir / "sepa")},
@@ -110,10 +128,14 @@ def run_etl_pipeline(
             raise FileNotFoundError(
                 f"No SEPA raw dataset found in {raw_date_dir}.\n"
                 f"Please harvest data first using:\n"
-                f"  uv run python -m sur_en_precios.tools.run_harvest --file <PATH_TO_SEPA_ZIP>"
+                f"  uv run python -m sur_en_precios.tools.run_harvest"
             )
 
     output_db_path = config.get_public_db_path()
+
+    from sur_en_precios.use_cases.process_region import (
+        ProcessAndPublishRegionUseCase,
+    )
 
     use_case = ProcessAndPublishRegionUseCase(
         target_region=target_region,
@@ -127,14 +149,27 @@ def run_etl_pipeline(
     # Output Summary Statistics for target date
     engine = create_engine(f"sqlite:///{output_db_path}")
     with Session(engine) as session:
-        store_cnt = session.execute(select(func.count(PointOfSale.id))).scalar_one()
-        prod_cnt = session.execute(select(func.count(ArticleCode.id))).scalar_one()
-        price_cnt = session.execute(select(func.count(Price.id))).scalar_one()
-        metric_cnt = session.execute(
-            select(func.count(DailyProductMetricModel.reference_price)).where(
-                DailyProductMetricModel.date == target_date
-            )
+        store_cnt = session.execute(select(func.count(Store.id))).scalar_one()
+        eans_cnt = session.execute(select(func.count(ArticleNumber.id))).scalar_one()
+        cards_cnt = session.execute(select(func.count(ArticleCard.id))).scalar_one()
+        price_cnt = session.execute(
+            select(func.count(Price.id))
+            .join(Timestamp, Price.timestamp_id == Timestamp.id)
+            .where(Timestamp.value == target_date)
         ).scalar_one()
+        metric_cnt = session.execute(
+            select(func.count(ArticleMetric.reference_price))
+            .join(Timestamp, ArticleMetric.timestamp_id == Timestamp.id)
+            .where(Timestamp.value == target_date)
+        ).scalar_one()
+        city_breakdown = session.execute(
+            select(City.name, func.count(ArticleMetric.reference_price))
+            .join(City, ArticleMetric.city_id == City.id)
+            .join(Timestamp, ArticleMetric.timestamp_id == Timestamp.id)
+            .where(Timestamp.value == target_date)
+            .group_by(City.name)
+            .order_by(City.name)
+        ).all()
 
     print("\n==================================================")
     print("      SUR EN PRECIOS — ETL PIPELINE SUCCESS       ")
@@ -143,9 +178,14 @@ def run_etl_pipeline(
     print(f" Date Processed    : {date_str}")
     print(f" Database Output   : {output_db_path}")
     print(f" Stores Ingested   : {store_cnt}")
-    print(f" Products Ingested : {prod_cnt}")
-    print(f" Price Records     : {price_cnt}")
+    print(f" Unique EANs       : {eans_cnt}")
+    print(f" Catalog Cards     : {cards_cnt}")
+    print(f" Prices (Date)     : {price_cnt}")
     print(f" Reference Prices  : {metric_cnt}")
+    if city_breakdown:
+        print(" City Breakdown    :")
+        for city_name, count_val in city_breakdown:
+            print(f"   • {city_name}: {count_val} reference prices")
     print("==================================================\n")
 
     return output_db_path
@@ -156,17 +196,24 @@ def main() -> None:
         description="Run Sur en Precios Regional ETL Pipeline"
     )
     parser.add_argument("--workdir", help="Path to working directory")
-    parser.add_argument("--region", help="Target region code (e.g. AR-U, AR-B)")
-    parser.add_argument("--date", help="Target processing date (YYYY-MM-DD)")
+    parser.add_argument(
+        "--create", action="store_true", help="Create default config if missing"
+    )
 
     args = parser.parse_args()
 
     workdir_path = Path(args.workdir).resolve() if args.workdir else None
-    target_date = date.fromisoformat(args.date) if args.date else None
-
-    run_etl_pipeline(
-        workdir_override=workdir_path, region=args.region, process_date_val=target_date
-    )
+    try:
+        run_etl_pipeline(
+            workdir_override=workdir_path,
+            should_create_override=args.create,
+        )
+    except Exception as exc:
+        print(
+            f"\n[ERROR] ETL Pipeline execution failed: {exc}\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

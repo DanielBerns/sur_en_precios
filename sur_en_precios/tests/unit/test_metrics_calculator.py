@@ -26,13 +26,13 @@ def test_calculate_metrics_full() -> None:
         ean="7790001",
         city="Bahía Blanca",
         prices=prices,
-        ref_price_7d_ago=1000,
     )
 
-    assert metrics.metric_date == today
+    assert metrics.date == today
+    assert metrics.ean == "7790001"
+    assert metrics.city_name == "Bahía Blanca"
     assert metrics.min_price == 1000
     assert metrics.max_price == 1500
-    assert metrics.median_price == 1200
-    assert metrics.reference_price is not None
-    assert metrics.pct_change_7d is not None
-    assert metrics.pct_change_7d > 0
+    assert metrics.reference_price == 1216
+    assert metrics.price_dispersion is not None
+    assert metrics.price_dispersion > 0

@@ -1,14 +1,15 @@
 from datetime import date
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
 
 from sur_en_precios.adapters.database.repositories import (
     SqlAlchemyCatalogRepository,
     SqlAlchemyPriceRepository,
 )
-from sur_en_precios.domain.models import ListItem
+from sur_en_precios.domain.models_public import PublicBase
+from sur_en_precios.domain.models_user import BasketItem
 from sur_en_precios.use_cases.optimize_basket import OptimizeBasketUseCase
 from sur_en_precios.use_cases.process_region import ProcessAndPublishRegionUseCase
 
@@ -42,22 +43,24 @@ def test_process_and_publish_region_use_case(tmp_path: Path) -> None:
 
     # Verify generated public.sqlite via repositories
     engine = create_engine(f"sqlite:///{output_db}")
+    assert set(inspect(engine).get_table_names()) == set(PublicBase.metadata.tables)
+    assert not any("fts" in t for t in inspect(engine).get_table_names())
     with Session(engine) as session:
         cat_repo = SqlAlchemyCatalogRepository(session)
         price_repo = SqlAlchemyPriceRepository(session)
 
-        product = cat_repo.get_product_by_ean("779001")
+        product = cat_repo.get_article_by_ean("779001")
         assert product is not None
         assert product.name == "Aceite Oliva 120ml"
 
         stores = cat_repo.get_stores_by_city("Bahía Blanca")
         assert len(stores) == 1
-        assert stores[0].id == "100-1-s1"
+        assert stores[0].code == "100-1-s1"
 
         # Test Optimize Basket Use Case against generated DB
         opt_use_case = OptimizeBasketUseCase(cat_repo, price_repo)
         result = opt_use_case.execute(
-            "Bahía Blanca", today, [ListItem(ean="779001", quantity=1)]
+            "Bahía Blanca", today, [BasketItem(ean="779001", quantity=1)]
         )
 
         assert result.best_single_store is not None
