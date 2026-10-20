@@ -1,0 +1,342 @@
+^Cdberns@bluefire:~/Projects/github/DanielBerns/sur_en_precios/sur_en_precios$ uv run python -m sur_en_precios.web.public_app.app
+ * Serving Flask app 'app'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 705-319-466
+127.0.0.1 - - [14/Oct/2026 16:55:22] "GET / HTTP/1.1" 200 -
+Failed to fetch baskets for user_id 1: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: basket_items_1.selected
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/adapters/database/repositories.py", line 1149, in get_user_baskets
+    results = self._session.execute(stmt).scalars().unique().all()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+           ^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Error loading baskets: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: basket_items_1.selected
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/web/public_app/app.py", line 702, in baskets
+    shopping_lists = user_repo.get_user_baskets(user_id=demo_user.id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/adapters/database/repositories.py", line 1149, in get_user_baskets
+    results = self._session.execute(stmt).scalars().unique().all()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+           ^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+127.0.0.1 - - [14/Oct/2026 16:55:24] "GET /baskets HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 16:55:28] "GET /baskets/new HTTP/1.1" 302 -
+Failed to fetch baskets for user_id 1: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: basket_items_1.selected
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/adapters/database/repositories.py", line 1149, in get_user_baskets
+    results = self._session.execute(stmt).scalars().unique().all()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+           ^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Error loading basket editor: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: basket_items_1.selected
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/web/public_app/app.py", line 770, in edit_basket
+    user_baskets = user_repo.get_user_baskets(user_id=demo_user.id)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/adapters/database/repositories.py", line 1149, in get_user_baskets
+    results = self._session.execute(stmt).scalars().unique().all()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+           ^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+127.0.0.1 - - [14/Oct/2026 16:55:28] "GET /baskets/4/edit HTTP/1.1" 302 -
+Failed to fetch baskets for user_id 1: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: basket_items_1.selected
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/adapters/database/repositories.py", line 1149, in get_user_baskets
+    results = self._session.execute(stmt).scalars().unique().all()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+           ^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Error loading baskets: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: basket_items_1.selected
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/web/public_app/app.py", line 702, in baskets
+    shopping_lists = user_repo.get_user_baskets(user_id=demo_user.id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/adapters/database/repositories.py", line 1149, in get_user_baskets
+    results = self._session.execute(stmt).scalars().unique().all()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+           ^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: basket_items_1.selected
+[SQL: SELECT baskets.id, baskets.uuid, baskets.user_id, baskets.name, baskets.is_public, baskets.created_at, basket_items_1.id AS id_1, basket_items_1.basket_id, basket_items_1.ean, basket_items_1.quantity, basket_items_1.selected, basket_items_1.numerator, basket_items_1.denominator 
+FROM baskets LEFT OUTER JOIN basket_items AS basket_items_1 ON baskets.id = basket_items_1.basket_id 
+WHERE baskets.user_id = ?]
+[parameters: (1,)]
+(Background on this error at: https://sqlalche.me/e/21/e3q8)
+127.0.0.1 - - [14/Oct/2026 16:55:28] "GET /baskets HTTP/1.1" 200 -
+

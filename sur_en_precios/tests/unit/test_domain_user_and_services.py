@@ -229,7 +229,7 @@ class TestBasketOptimizerService:
         card2 = ArticleCard(article_number=ean2, description=desc2)
 
         public_session.add_all(
-            [ts, state, city, place1, place2, store1, store2, ean1, ean2, card1, card2]
+            [store1, store2, card1, card2]
         )
         public_session.commit()
 

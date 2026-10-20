@@ -1,34 +1,36 @@
+"""Regional ETL Use Case: Processes daily SEPA feeds and enriches public.sqlite."""
+
+from __future__ import annotations
+
+import csv
 import logging
 import shutil
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-import duckdb
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.orm import Session, joinedload
+
 
 from sur_en_precios.adapters.database.repositories import (
     SqlAlchemyCatalogRepository,
     SqlAlchemyPriceRepository,
 )
+from sur_en_precios.adapters.database.seeder import DEFAULT_HERMES_DB_PATH, seed_master_catalog
 from sur_en_precios.adapters.sepa_archive import SepaArchiveError, ZipSepaDatasetAdapter
+from sur_en_precios.domain.cleaner.article_cleaner import ArticleCleaner
+from sur_en_precios.domain.cleaner.brand_cleaner import BrandLexicon
+from sur_en_precios.domain.cleaner.pos_cleaner import clean_point_of_sale_record
 from sur_en_precios.domain.models_public import (
-    ArticleBrand,
-    ArticleCard,
-    ArticleCategory,
-    ArticleDescription,
-    ArticleMetric,
-    ArticleNumber,
-    Branch,
-    City,
-    Flag,
-    Place,
-    Price,
+    Article,
+    Category,
+    DailyPrice,
+    DailyProductMetric,
+    PointOfSale,
     PublicBase,
-    State,
-    Store,
-    Timestamp,
+    UnreviewedArticle,
 )
 from sur_en_precios.domain.normalizers import (
     decode_region_code,
@@ -40,10 +42,11 @@ from sur_en_precios.domain.normalizers import (
 )
 from sur_en_precios.domain.ports import SepaDatasetPort
 from sur_en_precios.domain.services import PriceMetricsCalculator
+from sur_en_precios.domain.taxonomy.classifier import TaxonomyClassifier
 
 
 class ProcessAndPublishRegionUseCase:
-    """ETL Use Case: Processes raw daily SEPA CSVs per chain archive, computes Reference Price metrics, and updates public.sqlite."""
+    """ETL Use Case: Processes raw daily SEPA CSVs, computes Reference Price metrics, and updates public.sqlite."""
 
     def __init__(
         self,
@@ -52,17 +55,41 @@ class ProcessAndPublishRegionUseCase:
         batch_size: int = 10_000,
         temp_dir: Optional[Path] = None,
         logger: Optional[logging.Logger] = None,
+        master_db_path: Optional[Path] = None,
     ):
         self._target_region = target_region
         self._sepa_dataset = sepa_dataset_adapter or ZipSepaDatasetAdapter()
         self._batch_size = batch_size
         self._temp_dir = temp_dir
         self._logger = logger or logging.getLogger("sur_en_precios")
+        self._master_db_path = master_db_path or DEFAULT_HERMES_DB_PATH
+        self._article_cleaner = ArticleCleaner()
+        self._taxonomy_classifier = TaxonomyClassifier()
+
+    def _calculate_unit_price(
+        self, price: int, pkg_amount: Optional[float], pkg_unit: Optional[str]
+    ) -> Optional[float]:
+        """Calculates normalized unit price (ARS per kg or liter or unit)."""
+        if not pkg_amount or pkg_amount <= 0 or not pkg_unit:
+            return None
+
+        unit = pkg_unit.lower()
+        if unit in ("ml", "cc"):
+            # Normalize to liters
+            base_amt = pkg_amount / 1000.0
+            return round(price / base_amt, 2)
+        elif unit in ("g", "gr"):
+            # Normalize to kilograms
+            base_amt = pkg_amount / 1000.0
+            return round(price / base_amt, 2)
+        elif unit in ("l", "lt", "kg", "u", "un"):
+            return round(price / pkg_amount, 2)
+        return None
 
     def execute(
         self, raw_date_dir: Path, output_db_path: Path, process_date: date
     ) -> None:
-        """Executes ETL data processing using DuckDB vector operations and SQLAlchemy 2.0 ORM."""
+        """Executes ETL data processing with hybrid master catalog lookup and novel product staging."""
         self._logger.info(
             "Starting regional data processing ETL...",
             extra={
@@ -81,254 +108,281 @@ class ProcessAndPublishRegionUseCase:
                 )
 
             output_db_path.parent.mkdir(parents=True, exist_ok=True)
-            if output_db_path.exists():
-                output_db_path.unlink()
+
+            # 1. Hybrid Master Seeding: initialize public.sqlite if new
             engine = create_engine(f"sqlite:///{output_db_path}")
             PublicBase.metadata.create_all(engine)
+
+            with Session(engine) as session:
+                has_articles = session.scalar(select(Article.id).limit(1)) is not None
+                if not has_articles and self._master_db_path.exists():
+                    self._logger.info("Seeding master catalog from %s", self._master_db_path)
+                    seed_master_catalog(output_db_path, self._master_db_path)
+
+            # Load in-memory caches of known articles and categories
+            known_articles: Dict[str, Tuple[Optional[float], Optional[str], Optional[int]]] = {}
+            category_map: Dict[Tuple[str, str], int] = {}
+
+            with Session(engine) as session:
+                for a_ean, a_amt, a_unit, a_cat_id in session.execute(
+                    select(Article.ean, Article.package_amount, Article.package_unit, Article.category_id)
+                ).all():
+                    known_articles[a_ean] = (a_amt, a_unit, a_cat_id)
+
+                for cat in session.execute(
+                    select(Category).where(Category.level == 2).options(joinedload(Category.parent))
+                ).scalars():
+
+                    parent_name = cat.parent.name if cat.parent else "Almacén"
+                    category_map[(parent_name, cat.name)] = cat.id
 
             work_temp_base = (
                 self._temp_dir or (output_db_path.parent / "tmp")
             ).resolve()
             work_temp_base.mkdir(parents=True, exist_ok=True)
 
-            con = duckdb.connect()
-
-            all_stores: List[Store] = []
-            all_articles_dict: Dict[Tuple[str, str], ArticleCard] = {}
-            all_prices: List[Price] = []
+            all_stores: List[PointOfSale] = []
+            new_articles: List[Article] = []
+            unreviewed_staging: List[UnreviewedArticle] = []
+            all_prices: List[DailyPrice] = []
             store_city_map: Dict[str, str] = {}
             city_prices_map: Dict[Tuple[str, str], List[int]] = {}
+            seen_store_codes: Set[str] = set()
 
             processed_chains_count = 0
 
             for idx, chain_archive in enumerate(chain_archives):
                 chain_temp = work_temp_base / f"chain_{idx}"
                 if chain_temp.exists():
-                    shutil.rmtree(chain_temp)
+                    shutil.rmtree(chain_temp, ignore_errors=True)
                 chain_temp.mkdir(parents=True, exist_ok=True)
 
                 try:
-                    # 1. Extract sucursales.csv and optionally comercio.csv
+                    # 1. Extract sucursales.csv and optional comercio.csv
                     sucursales_csv = self._sepa_dataset.extract_member(
                         chain_archive, "sucursales.csv", chain_temp
                     )
 
-                    has_comercio = False
+                    comercio_map: Dict[Tuple[str, str], str] = {}
                     try:
                         comercio_csv = self._sepa_dataset.extract_member(
                             chain_archive, "comercio.csv", chain_temp
                         )
-                        has_comercio = comercio_csv.exists()
+                        if comercio_csv.exists():
+                            with open(comercio_csv, mode="r", encoding="utf-8-sig", errors="replace") as f:
+                                reader = csv.DictReader(f, delimiter="|")
+                                for row in reader:
+                                    ic = (row.get("id_comercio") or "").strip()
+                                    ib = (row.get("id_bandera") or "").strip()
+                                    bn = (row.get("comercio_bandera_nombre") or "").strip()
+                                    if ic and ib:
+                                        comercio_map[(ic, ib)] = bn
                     except (FileNotFoundError, SepaArchiveError):
-                        has_comercio = False
+                        pass
 
-                    # 2. Query stores filtered by region
-                    region_filter = (
-                        ""
-                        if self._target_region.upper() == "ALL"
-                        else f"WHERE sucursales_provincia = '{self._target_region}'"
-                    )
+                    # 2. Parse stores filtered by region
+                    chain_stores: List[PointOfSale] = []
+                    valid_chain_store_ids: Set[Tuple[str, str, str]] = set()
 
-                    if has_comercio:
-                        store_query = f"""
-                        SELECT 
-                            s.id_comercio,
-                            s.id_bandera,
-                            s.id_sucursal,
-                            concat(CAST(s.id_comercio AS VARCHAR), '-', CAST(s.id_bandera AS VARCHAR), '-', CAST(s.id_sucursal AS VARCHAR)) AS composite_id,
-                            COALESCE(c.comercio_bandera_nombre, 'Supermercado') AS chain_name,
-                            COALESCE(s.sucursales_nombre, 'Sucursal') AS store_name,
-                            COALESCE(s.sucursales_localidad, 'General') AS city,
-                            concat_ws(' ', s.sucursales_calle, s.sucursales_numero) AS address,
-                            TRY_CAST(s.sucursales_latitud AS DOUBLE) AS latitude,
-                            TRY_CAST(s.sucursales_longitud AS DOUBLE) AS longitude
-                        FROM read_csv('{sucursales_csv}', delim='|', header=True, all_varchar=True, ignore_errors=True) s
-                        LEFT JOIN read_csv('{comercio_csv}', delim='|', header=True, all_varchar=True, ignore_errors=True) c
-                          ON CAST(s.id_comercio AS VARCHAR) = CAST(c.id_comercio AS VARCHAR)
-                         AND CAST(s.id_bandera AS VARCHAR) = CAST(c.id_bandera AS VARCHAR)
-                        {region_filter}
-                        """
-                    else:
-                        store_query = f"""
-                        SELECT 
-                            id_comercio,
-                            id_bandera,
-                            id_sucursal,
-                            concat(CAST(id_comercio AS VARCHAR), '-', CAST(id_bandera AS VARCHAR), '-', CAST(id_sucursal AS VARCHAR)) AS composite_id,
-                            'Supermercado' AS chain_name,
-                            COALESCE(sucursales_nombre, 'Sucursal') AS store_name,
-                            COALESCE(sucursales_localidad, 'General') AS city,
-                            concat_ws(' ', sucursales_calle, sucursales_numero) AS address,
-                            TRY_CAST(sucursales_latitud AS DOUBLE) AS latitude,
-                            TRY_CAST(sucursales_longitud AS DOUBLE) AS longitude
-                        FROM read_csv('{sucursales_csv}', delim='|', header=True, all_varchar=True, ignore_errors=True)
-                        {region_filter}
-                        """
+                    with open(sucursales_csv, mode="r", encoding="utf-8-sig", errors="replace") as f:
+                        reader = csv.DictReader(f, delimiter="|")
+                        for row in reader:
+                            prov = (row.get("sucursales_provincia") or "").strip().upper()
+                            if self._target_region.upper() != "ALL" and prov != self._target_region.upper():
+                                continue
 
-                    stores_rows = con.execute(store_query).fetchall()
+                            ic = (row.get("id_comercio") or "").strip()
+                            ib = (row.get("id_bandera") or "").strip()
+                            isuc = (row.get("id_sucursal") or "").strip()
+                            if not ic or not ib or not isuc:
+                                continue
 
-                    if not stores_rows:
-                        # No stores in this region for this chain, skip products
+                            comp_id = f"{ic}-{ib}-{isuc}"
+                            valid_chain_store_ids.add((ic, ib, isuc))
+
+                            c_name = comercio_map.get((ic, ib)) or "Supermercado"
+                            s_name = row.get("sucursales_nombre") or "Sucursal"
+                            city = normalize_city(row.get("sucursales_localidad") or "General")
+                            calle = (row.get("sucursales_calle") or "").strip()
+                            num = (row.get("sucursales_numero") or "").strip()
+                            addr = f"{calle} {num}".strip() or None
+
+                            try:
+                                lat = float(row.get("sucursales_latitud", "")) if row.get("sucursales_latitud") else None
+                            except ValueError:
+                                lat = None
+
+                            try:
+                                lon = float(row.get("sucursales_longitud", "")) if row.get("sucursales_longitud") else None
+                            except ValueError:
+                                lon = None
+
+                            reg_code = self._target_region.strip().upper()
+                            reg_name = decode_region_code(reg_code)
+
+                            store_obj = PointOfSale(
+                                code=comp_id,
+                                brand_name=normalize_chain_name(c_name),
+                                branch_name=normalize_branch_name(s_name),
+                                address=addr,
+                                city=city,
+                                province=reg_name,
+                                province_code=reg_code,
+                                latitude=lat,
+                                longitude=lon,
+                            )
+
+                            if comp_id not in seen_store_codes:
+                                seen_store_codes.add(comp_id)
+                                chain_stores.append(store_obj)
+                            store_city_map[comp_id] = city
+
+                    if not chain_stores and not valid_chain_store_ids:
                         continue
 
                     processed_chains_count += 1
-                    chain_stores: List[Store] = []
-                    for s_row in stores_rows:
-                        (
-                            _,
-                            _,
-                            _,
-                            comp_id,
-                            c_name,
-                            s_name,
-                            city,
-                            addr,
-                            lat,
-                            lon,
-                        ) = s_row
-                        comp_id_str = str(comp_id)
-                        city_str = normalize_city(str(city))
-                        c_name_str = normalize_chain_name(str(c_name))
-                        s_name_str = normalize_branch_name(str(s_name))
-                        reg_code = self._target_region.strip().upper()
-                        reg_name = decode_region_code(reg_code)
-
-                        store_obj = Store(
-                            code=comp_id_str,
-                            flag=Flag(flag=c_name_str),
-                            branch=Branch(branch=s_name_str),
-                            place=Place(
-                                address=str(addr) if addr else None,
-                                city=City(
-                                    name=city_str,
-                                    state=State(
-                                        code=reg_code,
-                                        name=reg_name,
-                                    ),
-                                ),
-                                latitude=float(lat) if lat is not None else None,
-                                longitude=float(lon) if lon is not None else None,
-                            ),
-                        )
-                        chain_stores.append(store_obj)
-                        store_city_map[comp_id_str] = city_str
-
                     all_stores.extend(chain_stores)
 
-                    # Register temp table of chain stores in DuckDB for filtering prices
-                    con.execute("DROP TABLE IF EXISTS current_chain_stores;")
-                    con.execute(
-                        """
-                        CREATE TEMP TABLE current_chain_stores (
-                            id_comercio VARCHAR,
-                            id_bandera VARCHAR,
-                            id_sucursal VARCHAR,
-                            composite_id VARCHAR
-                        );
-                        """
-                    )
-                    for s_row in stores_rows:
-                        ic, ib, isuc, comp_id = (
-                            s_row[0],
-                            s_row[1],
-                            s_row[2],
-                            s_row[3],
-                        )
-                        con.execute(
-                            f"INSERT INTO current_chain_stores VALUES ('{ic}', '{ib}', '{isuc}', '{comp_id}');"
-                        )
-
-                    # 3. Extract productos.csv and join with chain stores
+                    # 3. Extract productos.csv
                     productos_csv = self._sepa_dataset.extract_member(
                         chain_archive, "productos.csv", chain_temp
                     )
 
-                    price_query = f"""
-                    SELECT 
-                        CAST(p.id_producto AS VARCHAR) AS ean,
-                        p.productos_descripcion AS name,
-                        p.productos_marca AS brand,
-                        'Almacén' AS category,
-                        cs.composite_id AS store_id,
-                        ROUND(TRY_CAST(p.productos_precio_lista AS DOUBLE)) AS price
-                    FROM read_csv('{productos_csv}', delim='|', header=True, all_varchar=True, ignore_errors=True) p
-                    INNER JOIN current_chain_stores cs
-                       ON CAST(p.id_comercio AS VARCHAR) = cs.id_comercio
-                      AND CAST(p.id_bandera AS VARCHAR) = cs.id_bandera
-                      AND CAST(p.id_sucursal AS VARCHAR) = cs.id_sucursal
-                    WHERE TRY_CAST(p.productos_precio_lista AS DOUBLE) IS NOT NULL
-                      AND TRY_CAST(p.productos_precio_lista AS DOUBLE) > 0
-                    """
-                    prices_rows = con.execute(price_query).fetchall()
-
                     seen_chain_prices: Set[Tuple[str, str]] = set()
 
-                    for p_row in prices_rows:
-                        ean, name, brand, category, store_id, price_val = p_row
-                        ean_str = str(ean)
-                        store_id_str = str(store_id)
-                        price_int = int(price_val)
+                    with open(productos_csv, mode="r", encoding="utf-8-sig", errors="replace") as f:
+                        reader = csv.DictReader(f, delimiter="|")
+                        for row in reader:
+                            ic = (row.get("id_comercio") or "").strip()
+                            ib = (row.get("id_bandera") or "").strip()
+                            isuc = (row.get("id_sucursal") or "").strip()
+                            if (ic, ib, isuc) not in valid_chain_store_ids:
+                                continue
 
-                        brand_clean = normalize_brand(str(brand)) if brand else None
-                        name_str = (
-                            normalize_description(str(name), brand=brand_clean)
-                            if name
-                            else f"Producto {ean_str}"
-                        )
+                            raw_p = row.get("productos_precio_lista") or ""
+                            try:
+                                price_val = float(raw_p)
+                                if price_val <= 0:
+                                    continue
+                                price_int = round(price_val)
+                            except (ValueError, TypeError):
+                                continue
 
-                        # Deduplicate prices within same chain run
-                        price_key = (ean_str, store_id_str)
-                        if price_key in seen_chain_prices:
-                            continue
-                        seen_chain_prices.add(price_key)
+                            ean_str = str(row.get("id_producto") or "").strip()
+                            if not ean_str:
+                                continue
 
-                        card_key = (ean_str, name_str)
-                        if card_key not in all_articles_dict:
-                            all_articles_dict[card_key] = ArticleCard(
-                                article_number=ArticleNumber(ean=ean_str),
-                                description=ArticleDescription(content=name_str),
-                                brand=ArticleBrand(brand=brand_clean)
-                                if brand_clean
-                                else None,
-                                category=ArticleCategory(content=str(category))
-                                if category
-                                else None,
+                            store_id_str = f"{ic}-{ib}-{isuc}"
+
+                            price_key = (ean_str, store_id_str)
+                            if price_key in seen_chain_prices:
+                                continue
+                            seen_chain_prices.add(price_key)
+
+                            # Check or clean article
+                            clean_pkg_amt: Optional[float] = None
+                            clean_pkg_unit: Optional[str] = None
+
+                            if ean_str in known_articles:
+                                clean_pkg_amt, clean_pkg_unit, _ = known_articles[ean_str]
+                            else:
+                                # Novel / unseen product: execute Cleaner & Classifier
+                                raw_desc = row.get("productos_descripcion", "")
+                                raw_brand = row.get("productos_marca", "")
+                                raw_pkg = f"{row.get('productos_cantidad_presentacion', '')} {row.get('productos_unidad_medida_presentacion', '')}".strip()
+
+                                cleaned = self._article_cleaner.process(
+                                    ean=ean_str,
+                                    raw_description=raw_desc,
+                                    raw_brand=raw_brand,
+                                    raw_package=raw_pkg,
+                                )
+
+                                classification = self._taxonomy_classifier.classify(cleaned)
+                                cat_id = category_map.get((classification.department, classification.subcategory))
+
+                                is_unclassified = (
+                                    classification.department == "Almacén"
+                                    and classification.subcategory == "Almacén General"
+                                )
+
+                                article_obj = Article(
+                                    ean=ean_str,
+                                    name=cleaned.name,
+                                    clean_description=cleaned.clean_description,
+                                    raw_description=cleaned.raw_description,
+                                    brand_name=cleaned.brand_name,
+                                    package=cleaned.package,
+                                    package_amount=cleaned.package_amount,
+                                    package_unit=cleaned.package_unit,
+                                    category_id=cat_id,
+                                    is_reviewed=not is_unclassified,
+                                )
+                                new_articles.append(article_obj)
+                                known_articles[ean_str] = (
+                                    cleaned.package_amount,
+                                    cleaned.package_unit,
+                                    cat_id,
+                                )
+                                clean_pkg_amt = cleaned.package_amount
+                                clean_pkg_unit = cleaned.package_unit
+
+                                # Flag unclassified or novel products for review in staging table
+                                if is_unclassified:
+                                    staging_obj = UnreviewedArticle(
+                                        ean=ean_str,
+                                        raw_description=raw_desc,
+                                        suggested_brand=cleaned.brand_name,
+                                        suggested_package=cleaned.package,
+                                        suggested_category_id=cat_id,
+                                        reason="Unclassified SEPA product",
+                                    )
+                                    unreviewed_staging.append(staging_obj)
+
+                            unit_price = self._calculate_unit_price(
+                                price_int, clean_pkg_amt, clean_pkg_unit
                             )
 
-                        all_prices.append(
-                            Price(
-                                amount=price_int,
-                                timestamp=Timestamp(value=process_date),
-                                store=Store(code=store_id_str),
-                                article_number=ArticleNumber(ean=ean_str),
+                            all_prices.append(
+                                DailyPrice(
+                                    date=process_date,
+                                    ean=ean_str,
+                                    store_code=store_id_str,
+                                    price=price_int,
+                                    unit_price=unit_price,
+                                )
                             )
-                        )
 
-                        city = store_city_map.get(store_id_str, "General")
-                        metric_key = (ean_str, city)
-                        if metric_key not in city_prices_map:
-                            city_prices_map[metric_key] = []
-                        city_prices_map[metric_key].append(price_int)
+                            city = store_city_map.get(store_id_str, "General")
+                            metric_key = (ean_str, city)
+                            if metric_key not in city_prices_map:
+                                city_prices_map[metric_key] = []
+                            city_prices_map[metric_key].append(price_int)
 
                     self._logger.info(
-                        f"Processed chain archive: {chain_archive.name}",
-                        extra={
-                            "chain_archive": chain_archive.name,
-                            "stores_found": len(chain_stores),
-                            "prices_found": len(seen_chain_prices),
-                        },
+                        "Processed chain archive: %s (stores=%d, prices=%d)",
+                        chain_archive.name,
+                        len(chain_stores),
+                        len(seen_chain_prices),
                     )
 
                 except (SepaArchiveError, FileNotFoundError) as exc:
                     self._logger.warning(
-                        f"Skipping chain archive due to extraction error: {chain_archive}. Error: {exc}"
+                        "Skipping chain archive due to error: %s (%s)", chain_archive, exc
                     )
                 finally:
                     if chain_temp.exists():
                         shutil.rmtree(chain_temp, ignore_errors=True)
 
             # 4. Save into Database using SQLAlchemy repositories
-            all_articles = list(all_articles_dict.values())
+            if not all_stores:
+                raise ValueError(
+                    f"No stores found in harvested data for region {self._target_region} on {process_date}."
+                )
+            if not all_prices:
+                raise ValueError(
+                    f"No prices found in harvested data for region {self._target_region} on {process_date}."
+                )
 
             with Session(engine) as session:
                 cat_repo = SqlAlchemyCatalogRepository(session)
@@ -339,11 +393,33 @@ class ProcessAndPublishRegionUseCase:
                 price_repo.delete_metrics_for_date(process_date)
 
                 cat_repo.save_stores(all_stores, batch_size=self._batch_size)
-                cat_repo.save_articles(all_articles, batch_size=self._batch_size)
+                if new_articles:
+                    cat_repo.save_articles(new_articles, batch_size=self._batch_size)
+
+                if unreviewed_staging:
+                    unique_staging = {s.ean: s for s in unreviewed_staging}.values()
+                    for s in unique_staging:
+                        stmt = (
+                            sqlite_insert(UnreviewedArticle)
+                            .values([
+                                {
+                                    "ean": s.ean,
+                                    "raw_description": s.raw_description,
+                                    "suggested_brand": s.suggested_brand,
+                                    "suggested_package": s.suggested_package,
+                                    "suggested_category_id": s.suggested_category_id,
+                                    "reason": s.reason,
+                                }
+                            ])
+                            .on_conflict_do_nothing(index_elements=["ean"])
+                        )
+                        session.execute(stmt)
+                    session.commit()
+
                 price_repo.save_prices(all_prices, batch_size=self._batch_size)
 
                 # Compute and save Reference Price Metrics
-                metric_entities: List[ArticleMetric] = []
+                metric_entities: List[DailyProductMetric] = []
                 for (ean, city), p_list in city_prices_map.items():
                     m = PriceMetricsCalculator.calculate_metrics(
                         metric_date=process_date,
@@ -356,18 +432,13 @@ class ProcessAndPublishRegionUseCase:
                 price_repo.save_metrics(metric_entities, batch_size=self._batch_size)
 
             self._logger.info(
-                "ETL processing completed successfully.",
-                extra={
-                    "region": self._target_region,
-                    "date": str(process_date),
-                    "chains_count": processed_chains_count,
-                    "stores_count": len(all_stores),
-                    "articles_count": len(all_articles),
-                    "prices_count": len(all_prices),
-                    "metrics_count": len(metric_entities),
-                },
+                "Regional ETL completed: %s stores, %s new articles, %s unreviewed, %s prices",
+                len(all_stores),
+                len(new_articles),
+                len(unreviewed_staging),
+                len(all_prices),
             )
 
         except Exception as exc:
-            self._logger.error(f"Regional ETL execution failed: {exc}", exc_info=True)
+            self._logger.error("Regional ETL execution failed: %s", exc)
             raise

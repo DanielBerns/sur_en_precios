@@ -34,9 +34,24 @@ class OptimizeBasketUseCase:
                 products_map[ean] = p
 
         # Fetch prices and reference prices
-        prices = self._price_repo.get_prices_for_basket(city, target_date, eans)
+        substitute_candidates_map: Dict[str, List[ArticleCard]] = {}
+        all_candidate_eans: List[str] = []
+        for ean in eans:
+            if hasattr(self._catalog_repo, "get_candidate_substitutions"):
+                cands = self._catalog_repo.get_candidate_substitutions(ean, limit=3)
+                if cands:
+                    substitute_candidates_map[ean] = cands
+                    for c in cands:
+                        c_ean = getattr(c, "ean", str(c))
+                        all_candidate_eans.append(c_ean)
+                        if c_ean not in products_map:
+                            products_map[c_ean] = c
+
+        all_query_eans = list(dict.fromkeys(eans + all_candidate_eans))
+
+        prices = self._price_repo.get_prices_for_basket(city, target_date, all_query_eans)
         reference_prices = self._price_repo.get_reference_prices(
-            city, target_date, eans
+            city, target_date, all_query_eans
         )
 
         return BasketOptimizerService.optimize_basket(
@@ -47,4 +62,5 @@ class OptimizeBasketUseCase:
             stores=stores,
             prices=prices,
             reference_prices=reference_prices,
+            substitute_candidates_map=substitute_candidates_map,
         )

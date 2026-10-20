@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from sur_en_precios.domain.models import ArticlePriceStats
 from sur_en_precios.domain.models_public import (
     ArticleCard,
     ArticleMetric,
@@ -103,6 +104,16 @@ class CatalogRepositoryPort(ABC):
     @abstractmethod
     def get_stores_by_city(self, city: str) -> List[Store]: ...
 
+    def get_cities_for_region(self, region: str) -> List[str]:
+        """Returns distinct cities within the given region code."""
+        return []
+
+    def get_candidate_substitutions(
+        self, ean: str, limit: int = 5
+    ) -> List[ArticleCard]:
+        """Returns candidate articles in the same subcategory for substitution."""
+        return []
+
 
 class PriceRepositoryPort(ABC):
     """Port for daily prices and statistical metrics queries."""
@@ -128,6 +139,16 @@ class PriceRepositoryPort(ABC):
     def get_reference_prices(
         self, city: str, price_date: date, eans: List[str]
     ) -> Dict[str, int]: ...
+
+    def get_latest_price_date(self) -> Optional[date]:
+        """Returns the latest date present in daily prices, if available."""
+        return None
+
+    def get_article_price_stats(
+        self, ean: str, city: Optional[str] = None, price_date: Optional[date] = None
+    ) -> Optional[ArticlePriceStats]:
+        """Returns statistical price metrics (min, max, reference price) and store observations for an article."""
+        return None
 
 
 class UserRepositoryPort(ABC):

@@ -1,0 +1,59 @@
+dberns@bluefire:~/Projects/github/DanielBerns/sur_en_precios/sur_en_precios$ uv run python -m sur_en_precios.web.public_app.app
+ * Serving Flask app 'app'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+127.0.0.1 - - [14/Oct/2026 17:35:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:35:59] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [14/Oct/2026 17:36:05] "GET /baskets HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:36:18] "GET /baskets/new HTTP/1.1" 302 -
+127.0.0.1 - - [14/Oct/2026 17:36:18] "GET /baskets/1/edit HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:36:50] "GET /api/articles/search?q=aceite&mode=fuzzy HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:38:43] "GET /api/articles/search?q=leche&mode=fuzzy HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:39:37] "POST /baskets/1/save HTTP/1.1" 302 -
+127.0.0.1 - - [14/Oct/2026 17:39:37] "GET /baskets/1/edit HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:39:40] "GET /baskets/1/export HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:39:44] "GET /optimize?list_id=1 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:39:49] "GET /optimize?city=Bahía+Blanca&date=2026-10-14&eans=7790070231697,+7791102007877,+7790070231420,+7790520999511,+7790272001005,+7790272001029,+7790580160807,+7790272001036,+7790070104311,+7790060234868,+7790272000794,+7790199603757,+7790748235149,+0000077958921,+7622202328947,+7622210795625,+7790263119597 HTTP/1.1" 200 -
+127.0.0.1 - - [14/Oct/2026 17:40:07] "GET /optimize?city=Bahía+Blanca&date=2026-10-13&eans=7790070231697,+7791102007877,+7790070231420,+7790520999511,+7790272001005,+7790272001029,+7790580160807,+7790272001036,+7790070104311,+7790060234868,+7790272000794,+7790199603757,+7790748235149,+0000077958921,+7622202328947,+7622210795625,+7790263119597 HTTP/1.1" 200 -
+[2026-10-14 17:40:28,231] ERROR in app: Exception on /optimize [GET]
+Traceback (most recent call last):
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/src/sur_en_precios/web/public_app/app.py", line 1265, in optimize
+    return render_template_string(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/flask/templating.py", line 163, in render_template_string
+    return _render(app, template, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/flask/templating.py", line 132, in _render
+    rv = template.render(context)
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/jinja2/environment.py", line 1295, in render
+    self.environment.handle_exception()
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/jinja2/environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "<template>", line 160, in top-level template code
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/jinja2/ext.py", line 168, in _gettext_alias
+    return __context.call(__context.resolve("gettext"), *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/jinja2/ext.py", line 180, in gettext
+    return rv % variables  # type: ignore
+           ~~~^~~~~~~~~~~
+  File "/home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios/.venv/lib/python3.12/site-packages/markupsafe/__init__.py", line 165, in __mod__
+    return self.__class__(super().__mod__(value))
+                          ^^^^^^^^^^^^^^^^^^^^^^
+ValueError: incomplete format
+127.0.0.1 - - [14/Oct/2026 17:40:28] "GET /optimize?city=Comodoro+Rivadavia&date=2026-10-13&eans=7790070231697,+7791102007877,+7790070231420,+7790520999511,+7790272001005,+7790272001029,+7790580160807,+7790272001036,+7790070104311,+7790060234868,+7790272000794,+7790199603757,+7790748235149,+0000077958921,+7622202328947,+7622210795625,+7790263119597 HTTP/1.1" 500 -
+

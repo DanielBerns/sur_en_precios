@@ -157,7 +157,7 @@ async def run_harvest(
         }
 
     except Exception as exc:
-        logger.error(f"Harvesting failed: {exc}", exc_info=True)
+        logger.error(f"Harvesting failed: {exc}")
         raise
 
 

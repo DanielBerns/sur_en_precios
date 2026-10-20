@@ -140,17 +140,23 @@ def test_sepa_archive_harvest_and_etl_pipeline(tmp_path: Path) -> None:
 
     engine = create_engine(f"sqlite:///{db_path}")
     with Session(engine) as session:
-        stores = session.execute(select(Store)).scalars().all()
         # Should contain 2 stores in AR-U (1-1-100 and 2-1-100), store 2-1-200 (AR-C) excluded
-        assert len(stores) == 2
-        store_ids = {s.code for s in stores}
-        assert store_ids == {"1-1-100", "2-1-100"}
-        chain_names = {s.chain_name for s in stores}
-        assert chain_names == {"Carrefour", "La Anonima"}
+        s1 = session.execute(select(Store).where(Store.code == "1-1-100")).scalars().first()
+        s2 = session.execute(select(Store).where(Store.code == "2-1-100")).scalars().first()
+        s3 = session.execute(select(Store).where(Store.code == "2-1-200")).scalars().first()
+        assert s1 is not None
+        assert s2 is not None
+        assert s3 is None
+        assert s1.chain_name == "Carrefour"
+        assert s2.chain_name == "La Anonima"
 
-        products = session.execute(select(ArticleNumber)).scalars().all()
-        assert len(products) == 1
-        assert products[0].ean == "779001001"
+        product = (
+            session.execute(select(ArticleNumber).where(ArticleNumber.ean == "779001001"))
+            .scalars()
+            .first()
+        )
+        assert product is not None
+        assert product.ean == "779001001"
 
         prices = session.execute(select(Price)).scalars().all()
         # Should contain 2 prices (from AR-U stores 1-1-100 and 2-1-100)

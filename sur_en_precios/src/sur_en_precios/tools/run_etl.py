@@ -12,10 +12,14 @@ from sur_en_precios.adapters.logging import setup_application_logging
 from sur_en_precios.adapters.sepa_archive import ZipSepaDatasetAdapter
 from sur_en_precios.config import read_config
 from sur_en_precios.domain.models_public import (
+    Article,
     ArticleCard,
     ArticleMetric,
     ArticleNumber,
     City,
+    DailyPrice,
+    DailyProductMetric,
+    PointOfSale,
     Price,
     Store,
     Timestamp,
@@ -40,35 +44,6 @@ def find_latest_raw_date(raw_dir: Path) -> Optional[date]:
                     pass
 
     return max(valid_dates) if valid_dates else None
-
-
-def create_sample_sepa_data(extracted_dir: Path) -> None:
-    """Generates valid sample SEPA CSVs following Anexo II metadata specifications."""
-    extracted_dir.mkdir(parents=True, exist_ok=True)
-
-    sucursales_csv = extracted_dir / "sucursales.csv"
-    sucursales_csv.write_text(
-        "id_comercio|id_bandera|id_sucursal|sucursales_nombre|sucursales_tipo|sucursales_calle|sucursales_numero|sucursales_latitud|sucursales_longitud|sucursales_observaciones|sucursales_barrio|sucursales_codigo_postal|sucursales_localidad|sucursales_provincia\n"
-        "100|1|s1|Carrefour Central|Hipermercado|Av. Colón|250|-38.7183|-62.2662||Centro|8000|Bahía Blanca|AR-B\n"
-        "100|1|s2|Vea Sucursal 1|Supermercado|Calle Donado|120|-38.7201|-62.2610||Centro|8000|Bahía Blanca|AR-B\n"
-        "100|1|s3|Cooperativa Obrera|Supermercado|Av. Alem|450|-38.7145|-62.2589||Palihue|8000|Bahía Blanca|AR-B\n",
-        encoding="utf-8",
-    )
-
-    productos_csv = extracted_dir / "productos.csv"
-    productos_csv.write_text(
-        "id_comercio|id_bandera|id_sucursal|id_producto|productos_ean|productos_descripcion|productos_cantidad_presentacion|productos_unidad_medida_presentacion|productos_marca|productos_precio_lista|productos_precio_referencia|productos_cantidad_referencia|productos_unidad_medida_referencia|productos_precio_unitario_promo1|productos_leyenda_promo1|productos_precio_unitario_promo2|productos_leyenda_promo2\n"
-        "100|1|s1|7790001001|1|Leche Entera 1L|1|l|La Serenísima|1200.00|1200.00|1|l|||||\n"
-        "100|1|s2|7790001001|1|Leche Entera 1L|1|l|La Serenísima|1150.00|1150.00|1|l|||||\n"
-        "100|1|s3|7790001001|1|Leche Entera 1L|1|l|La Serenísima|1220.00|1220.00|1|l|||||\n"
-        "100|1|s1|7790002002|1|Pan Lactal 500g|500|g|Bimbo|2400.00|4800.00|1|kg|||||\n"
-        "100|1|s2|7790002002|1|Pan Lactal 500g|500|g|Bimbo|2250.00|4500.00|1|kg|||||\n"
-        "100|1|s3|7790002002|1|Pan Lactal 500g|500|g|Bimbo|2300.00|4600.00|1|kg|||||\n"
-        "100|1|s1|7790003003|1|Aceite Oliva Aerosol 120ml|120|ml|Freir|3500.00|29166.00|1|l|||||\n"
-        "100|1|s2|7790003003|1|Aceite Oliva Aerosol 120ml|120|ml|Freir|3800.00|31666.00|1|l|||||\n"
-        "100|1|s3|7790003003|1|Aceite Oliva Aerosol 120ml|120|ml|Freir|3450.00|28750.00|1|l|||||\n",
-        encoding="utf-8",
-    )
 
 
 def run_etl_pipeline(
@@ -108,8 +83,13 @@ def run_etl_pipeline(
         or process_date_value
         or configured_date
         or find_latest_raw_date(config.raw_dir)
-        or date.today()
     )
+    if not target_date:
+        raise FileNotFoundError(
+            f"No harvested SEPA dataset found in {config.raw_dir}.\n"
+            f"Please harvest data first using:\n"
+            f"  uv run python -m sur_en_precios.tools.run_harvest"
+        )
     date_str = target_date.strftime("%Y-%m-%d")
 
     raw_date_dir = config.raw_dir / date_str
@@ -117,19 +97,11 @@ def run_etl_pipeline(
     chain_archives = dataset_adapter.list_chain_archives(raw_date_dir)
 
     if not chain_archives:
-        if create_sample_if_missing:
-            logger.info(
-                "Raw SEPA archives missing. Generating sample SEPA data...",
-                extra={"dir": str(raw_date_dir / "sepa")},
-            )
-            create_sample_sepa_data(raw_date_dir / "sepa")
-            raw_date_dir = raw_date_dir / "sepa"
-        else:
-            raise FileNotFoundError(
-                f"No SEPA raw dataset found in {raw_date_dir}.\n"
-                f"Please harvest data first using:\n"
-                f"  uv run python -m sur_en_precios.tools.run_harvest"
-            )
+        raise FileNotFoundError(
+            f"No SEPA raw dataset found in {raw_date_dir}.\n"
+            f"Please harvest data first using:\n"
+            f"  uv run python -m sur_en_precios.tools.run_harvest"
+        )
 
     output_db_path = config.get_public_db_path()
 
@@ -149,26 +121,19 @@ def run_etl_pipeline(
     # Output Summary Statistics for target date
     engine = create_engine(f"sqlite:///{output_db_path}")
     with Session(engine) as session:
-        store_cnt = session.execute(select(func.count(Store.id))).scalar_one()
-        eans_cnt = session.execute(select(func.count(ArticleNumber.id))).scalar_one()
-        cards_cnt = session.execute(select(func.count(ArticleCard.id))).scalar_one()
+        store_cnt = session.execute(select(func.count(PointOfSale.id))).scalar_one()
+        articles_cnt = session.execute(select(func.count(Article.id))).scalar_one()
         price_cnt = session.execute(
-            select(func.count(Price.id))
-            .join(Timestamp, Price.timestamp_id == Timestamp.id)
-            .where(Timestamp.value == target_date)
+            select(func.count()).select_from(DailyPrice).where(DailyPrice.date == target_date)
         ).scalar_one()
         metric_cnt = session.execute(
-            select(func.count(ArticleMetric.reference_price))
-            .join(Timestamp, ArticleMetric.timestamp_id == Timestamp.id)
-            .where(Timestamp.value == target_date)
+            select(func.count()).select_from(DailyProductMetric).where(DailyProductMetric.date == target_date)
         ).scalar_one()
         city_breakdown = session.execute(
-            select(City.name, func.count(ArticleMetric.reference_price))
-            .join(City, ArticleMetric.city_id == City.id)
-            .join(Timestamp, ArticleMetric.timestamp_id == Timestamp.id)
-            .where(Timestamp.value == target_date)
-            .group_by(City.name)
-            .order_by(City.name)
+            select(DailyProductMetric.city, func.count())
+            .where(DailyProductMetric.date == target_date)
+            .group_by(DailyProductMetric.city)
+            .order_by(DailyProductMetric.city)
         ).all()
 
     print("\n==================================================")
@@ -178,8 +143,7 @@ def run_etl_pipeline(
     print(f" Date Processed    : {date_str}")
     print(f" Database Output   : {output_db_path}")
     print(f" Stores Ingested   : {store_cnt}")
-    print(f" Unique EANs       : {eans_cnt}")
-    print(f" Catalog Cards     : {cards_cnt}")
+    print(f" Catalog Articles  : {articles_cnt}")
     print(f" Prices (Date)     : {price_cnt}")
     print(f" Reference Prices  : {metric_cnt}")
     if city_breakdown:
@@ -209,6 +173,14 @@ def main() -> None:
             should_create_override=args.create,
         )
     except Exception as exc:
+        try:
+            config = read_config(
+                workdir_override=workdir_path, should_create_override=False
+            )
+            logger = setup_application_logging(config)
+            logger.error("ETL pipeline execution failed: %s", exc)
+        except Exception:
+            pass
         print(
             f"\n[ERROR] ETL Pipeline execution failed: {exc}\n",
             file=sys.stderr,

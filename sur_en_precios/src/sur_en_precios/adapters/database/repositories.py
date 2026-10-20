@@ -1,41 +1,45 @@
+"""SQLAlchemy 2.0 repository implementations for catalog, prices, and users."""
+
+from __future__ import annotations
+
 import logging
 import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
+
+
+
+from sur_en_precios.domain.cleaner.text_utils import clean_whitespace, slugify, title_case_spanish
 from sur_en_precios.domain.models_public import (
-    ArticleBrand,
-    ArticleCard,
-    ArticleCategory,
-    ArticleDescription,
-    ArticleMetric,
-    ArticleNumber,
-    Branch,
-    Business,
-    City,
-    Flag,
-    Place,
-    Price,
-    State,
-    Store,
-    Timestamp,
+    Article,
+    Brand,
+    Category,
+    DailyPrice,
+    DailyProductMetric,
+    PointOfSale,
+    Tag,
+    article_tags,
 )
+from sur_en_precios.domain.models import ArticlePriceStats, StorePriceDetail
 from sur_en_precios.domain.models_user import (
     Basket,
     BasketItem,
     User,
 )
-from sur_en_precios.domain.normalizers import decode_region_code
 from sur_en_precios.domain.ports import (
     CatalogRepositoryPort,
     PriceRepositoryPort,
     UserRepositoryPort,
 )
-from sur_en_precios.domain.services import fuzzy_similarity_ratio
+from sur_en_precios.domain.services import (
+    PriceMetricsCalculator,
+    fuzzy_similarity_ratio,
+)
 
 logger = logging.getLogger("sur_en_precios.repositories")
 
@@ -43,9 +47,11 @@ CHUNK_SIZE = 500
 
 
 def _get_brand_str(item: Any) -> Optional[str]:
-    b = getattr(item, "brand", None)
+    b = getattr(item, "brand_name", None) or getattr(item, "brand", None)
     if b is not None and hasattr(b, "brand"):
         return str(b.brand)
+    if b is not None and hasattr(b, "name"):
+        return str(b.name)
     return str(b) if b is not None else None
 
 
@@ -53,12 +59,16 @@ def _get_category_str(item: Any) -> Optional[str]:
     c = getattr(item, "category", None)
     if c is not None and hasattr(c, "content"):
         return str(c.content)
+    if c is not None and hasattr(c, "name"):
+        return str(c.name)
     if c is not None and hasattr(c, "category"):
         return str(c.category)
     return str(c) if c is not None else None
 
 
 def _get_description_str(item: Any) -> str:
+    if hasattr(item, "clean_description") and item.clean_description:
+        return str(item.clean_description)
     d = getattr(item, "description", None)
     if d is not None and hasattr(d, "content"):
         return str(d.content)
@@ -90,6 +100,8 @@ def _get_store_code(s: Any) -> str:
 
 
 def _get_chain_name(s: Any) -> str:
+    if hasattr(s, "brand_name") and s.brand_name:
+        return str(s.brand_name)
     if hasattr(s, "chain_name") and s.chain_name:
         return str(s.chain_name)
     if hasattr(s, "flag") and s.flag:
@@ -98,10 +110,10 @@ def _get_chain_name(s: Any) -> str:
 
 
 def _get_store_name(s: Any) -> str:
-    if hasattr(s, "store_name") and s.store_name:
-        return str(s.store_name)
     if hasattr(s, "branch_name") and s.branch_name:
         return str(s.branch_name)
+    if hasattr(s, "store_name") and s.store_name:
+        return str(s.store_name)
     if hasattr(s, "branch") and s.branch:
         return str(s.branch.branch if hasattr(s.branch, "branch") else s.branch)
     return ""
@@ -109,28 +121,14 @@ def _get_store_name(s: Any) -> str:
 
 def _get_city_name(s: Any) -> str:
     if hasattr(s, "city") and s.city:
-        return str(s.city)
-    if hasattr(s, "place") and s.place and hasattr(s.place, "city") and s.place.city:
-        return str(s.place.city.name)
-    return "General"
-
-
-def _get_state_code_and_name(s: Any) -> Tuple[str, str]:
+        c = s.city
+        if hasattr(c, "name"):
+            return str(c.name)
+        return str(c)
     if hasattr(s, "place") and s.place and hasattr(s.place, "city") and s.place.city:
         city_obj = s.place.city
-        if hasattr(city_obj, "state") and city_obj.state:
-            code = getattr(city_obj.state, "code", "AR-B")
-            name = getattr(city_obj.state, "name", None) or decode_region_code(code)
-            return str(code), str(name)
-    if hasattr(s, "state") and s.state:
-        st = s.state
-        code = getattr(st, "code", "AR-B")
-        name = getattr(st, "name", None) or decode_region_code(code)
-        return str(code), str(name)
-    if hasattr(s, "province") and s.province:
-        prov = str(s.province)
-        return prov, decode_region_code(prov)
-    return "AR-B", "Buenos Aires"
+        return str(getattr(city_obj, "name", city_obj))
+    return "General"
 
 
 class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
@@ -139,446 +137,236 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
     def __init__(self, session: Session):
         self._session = session
 
-    def save_articles(
-        self, articles: List[ArticleCard], batch_size: int = 10_000
-    ) -> None:
+    def save_articles(self, articles: List[Any], batch_size: int = 10_000) -> None:
         if not articles:
             return
 
-        # 1. Distinct Brands
-        brand_set: Set[str] = set()
+        # 1. Ensure Brands exist and resolve brand_map
+        brand_names = {b.strip() for a in articles if (b := _get_brand_str(a)) and b.strip()}
+        brand_map: Dict[str, Optional[int]] = {}
+        if brand_names:
+            existing_brands = self._session.execute(select(Brand)).scalars().all()
+            name_to_brand: Dict[str, Brand] = {b.name: b for b in existing_brands}
+            slug_to_brand: Dict[str, Brand] = {b.slug: b for b in existing_brands}
+
+            for b_name in sorted(brand_names):
+                if b_name in name_to_brand:
+                    continue
+                b_slug = slugify(b_name)
+                if not b_slug:
+                    continue
+                if b_slug in slug_to_brand:
+                    name_to_brand[b_name] = slug_to_brand[b_slug]
+                    continue
+
+                # Brand is genuinely new
+                nb = Brand(name=b_name, slug=b_slug)
+                self._session.add(nb)
+                name_to_brand[b_name] = nb
+                slug_to_brand[b_slug] = nb
+
+            self._session.flush()
+
+            for b_name in brand_names:
+                brand_obj = name_to_brand.get(b_name)
+                if not brand_obj:
+                    b_slug = slugify(b_name)
+                    brand_obj = slug_to_brand.get(b_slug)
+                if brand_obj and brand_obj.id:
+                    brand_map[b_name] = brand_obj.id
+
+        # 2. Upsert Articles
+        rows = []
         for a in articles:
-            b_val = _get_brand_str(a)
-            if b_val:
-                brand_set.add(b_val)
-        brands = list(brand_set)
-        for i in range(0, len(brands), CHUNK_SIZE):
-            chunk_brands = [{"brand": b} for b in brands[i : i + CHUNK_SIZE]]
-            stmt = sqlite_insert(ArticleBrand).values(chunk_brands)
-            stmt = stmt.on_conflict_do_nothing(index_elements=["brand"])
-            self._session.execute(stmt)
-
-        # 2. Distinct Categories (content column)
-        cat_set: Set[str] = set()
-        for a in articles:
-            c_val = _get_category_str(a)
-            if c_val:
-                cat_set.add(c_val)
-        categories = list(cat_set)
-        for i in range(0, len(categories), CHUNK_SIZE):
-            chunk_cats = [{"content": c} for c in categories[i : i + CHUNK_SIZE]]
-            stmt = sqlite_insert(ArticleCategory).values(chunk_cats)
-            stmt = stmt.on_conflict_do_nothing(index_elements=["content"])
-            self._session.execute(stmt)
-
-        # 3. Distinct Descriptions (content column)
-        desc_set: Set[str] = set()
-        for a in articles:
-            d_val = _get_description_str(a)
-            if d_val:
-                desc_set.add(d_val)
-        descriptions = list(desc_set)
-        for i in range(0, len(descriptions), CHUNK_SIZE):
-            chunk_descs = [{"content": d} for d in descriptions[i : i + CHUNK_SIZE]]
-            stmt = sqlite_insert(ArticleDescription).values(chunk_descs)
-            stmt = stmt.on_conflict_do_nothing(index_elements=["content"])
-            self._session.execute(stmt)
-
-        # 4. Distinct Article Numbers (ean column in article_numbers)
-        ean_set: Set[str] = set()
-        for a in articles:
-            e_val = _get_ean_str(a)
-            if e_val:
-                ean_set.add(e_val)
-        eans = list(ean_set)
-        for i in range(0, len(eans), CHUNK_SIZE):
-            chunk_eans = [{"ean": e} for e in eans[i : i + CHUNK_SIZE]]
-            stmt = sqlite_insert(ArticleNumber).values(chunk_eans)
-            stmt = stmt.on_conflict_do_nothing(index_elements=["ean"])
-            self._session.execute(stmt)
-
-        self._session.flush()
-
-        # Build lookup dicts using chunked IN queries
-        brand_map: Dict[str, int] = {}
-        for i in range(0, len(brands), CHUNK_SIZE):
-            chunk_b = brands[i : i + CHUNK_SIZE]
-            for brand_entity in self._session.execute(
-                select(ArticleBrand).where(ArticleBrand.brand.in_(chunk_b))
-            ).scalars():
-                brand_map[brand_entity.brand] = brand_entity.id
-
-        cat_map: Dict[str, int] = {}
-        for i in range(0, len(categories), CHUNK_SIZE):
-            chunk_c = categories[i : i + CHUNK_SIZE]
-            for cat_entity in self._session.execute(
-                select(ArticleCategory).where(ArticleCategory.content.in_(chunk_c))
-            ).scalars():
-                cat_map[cat_entity.content] = cat_entity.id
-
-        desc_map: Dict[str, int] = {}
-        for i in range(0, len(descriptions), CHUNK_SIZE):
-            chunk_d = descriptions[i : i + CHUNK_SIZE]
-            for desc_entity in self._session.execute(
-                select(ArticleDescription).where(
-                    ArticleDescription.content.in_(chunk_d)
-                )
-            ).scalars():
-                desc_map[desc_entity.content] = desc_entity.id
-
-        number_map: Dict[str, int] = {}
-        for i in range(0, len(eans), CHUNK_SIZE):
-            chunk_n = eans[i : i + CHUNK_SIZE]
-            for num_entity in self._session.execute(
-                select(ArticleNumber).where(ArticleNumber.ean.in_(chunk_n))
-            ).scalars():
-                number_map[num_entity.ean] = num_entity.id
-
-        # 5. Insert ArticleCards in chunked batches
-        cards_to_insert = []
-        for a in articles:
-            ean_val = _get_ean_str(a)
-            number_id = number_map.get(ean_val)
-            if not number_id:
+            ean = _get_ean_str(a)
+            if not ean:
                 continue
-            desc_val = _get_description_str(a)
-            desc_id = desc_map.get(desc_val)
-            if not desc_id:
-                continue
-            brand_val = _get_brand_str(a)
-            cat_val = _get_category_str(a)
+            desc = _get_description_str(a)
+            name = getattr(a, "name", None) or desc
+            b_name = _get_brand_str(a)
+            b_id = brand_map.get(b_name) if b_name else getattr(a, "brand_id", None)
+            pkg = getattr(a, "package", None)
+            pkg_amt = getattr(a, "package_amount", None)
+            pkg_unit = getattr(a, "package_unit", None)
+            cat_id = getattr(a, "category_id", None)
 
-            brand_id = brand_map.get(brand_val) if brand_val else None
-            cat_id = cat_map.get(cat_val) if cat_val else None
-
-            cards_to_insert.append(
+            rows.append(
                 {
-                    "article_number_id": number_id,
-                    "description_id": desc_id,
-                    "brand_id": brand_id,
+                    "ean": ean,
+                    "name": name,
+                    "clean_description": desc,
+                    "raw_description": getattr(a, "raw_description", desc),
+                    "brand_id": b_id,
+                    "brand_name": b_name,
+                    "package": pkg,
+                    "package_amount": pkg_amt,
+                    "package_unit": pkg_unit,
                     "category_id": cat_id,
+                    "is_reviewed": True if getattr(a, "is_reviewed", None) is None else bool(getattr(a, "is_reviewed")),
                 }
             )
 
-        for i in range(0, len(cards_to_insert), CHUNK_SIZE):
-            chunk_cards = cards_to_insert[i : i + CHUNK_SIZE]
-            stmt = sqlite_insert(ArticleCard).values(chunk_cards)
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=["article_number_id", "description_id"]
+        for i in range(0, len(rows), CHUNK_SIZE):
+            chunk = rows[i : i + CHUNK_SIZE]
+            stmt = sqlite_insert(Article).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["ean"],
+                set_={
+                    "name": stmt.excluded.name,
+                    "clean_description": stmt.excluded.clean_description,
+                    "brand_name": stmt.excluded.brand_name,
+                    "brand_id": stmt.excluded.brand_id,
+                    "package": stmt.excluded.package,
+                    "package_amount": stmt.excluded.package_amount,
+                    "package_unit": stmt.excluded.package_unit,
+                    "category_id": stmt.excluded.category_id,
+                },
             )
             self._session.execute(stmt)
 
         self._session.commit()
 
-    def save_stores(self, stores: List[Store], batch_size: int = 10_000) -> None:
+    def save_stores(self, stores: List[Any], batch_size: int = 10_000) -> None:
         if not stores:
             return
 
-        flags_set: Set[str] = set()
-        branches_set: Set[str] = set()
+        rows = []
         for s in stores:
-            f_val = _get_chain_name(s)
-            if f_val:
-                flags_set.add(f_val)
-            b_val = _get_store_name(s)
-            if b_val:
-                branches_set.add(b_val)
-
-        flags = list(flags_set)
-        for i in range(0, len(flags), CHUNK_SIZE):
-            chunk_flags = [{"flag": f} for f in flags[i : i + CHUNK_SIZE]]
-            self._session.execute(
-                sqlite_insert(Flag)
-                .values(chunk_flags)
-                .on_conflict_do_nothing(index_elements=["flag"])
-            )
-            chunk_biz = [{"business": f} for f in flags[i : i + CHUNK_SIZE]]
-            self._session.execute(
-                sqlite_insert(Business)
-                .values(chunk_biz)
-                .on_conflict_do_nothing(index_elements=["business"])
-            )
-
-        branches = list(branches_set)
-        for i in range(0, len(branches), CHUNK_SIZE):
-            chunk_branches = [{"branch": b} for b in branches[i : i + CHUNK_SIZE]]
-            self._session.execute(
-                sqlite_insert(Branch)
-                .values(chunk_branches)
-                .on_conflict_do_nothing(index_elements=["branch"])
-            )
-
-        # Ensure States exist
-        states_dict: Dict[str, str] = {}
-        for s in stores:
-            st_code, st_name = _get_state_code_and_name(s)
-            states_dict[st_code] = st_name
-
-        for st_code, st_name in states_dict.items():
-            self._session.execute(
-                sqlite_insert(State)
-                .values([{"code": st_code, "name": st_name}])
-                .on_conflict_do_nothing(index_elements=["code"])
-            )
-        self._session.flush()
-
-        state_map: Dict[str, int] = {}
-        for st_entity in self._session.execute(
-            select(State).where(State.code.in_(list(states_dict.keys())))
-        ).scalars():
-            state_map[st_entity.code] = st_entity.id
-
-        # Ensure Cities exist (UniqueConstraint: name, state_id)
-        city_tuples: Set[Tuple[str, int]] = set()
-        for s in stores:
-            c_name = _get_city_name(s)
-            st_code, _ = _get_state_code_and_name(s)
-            st_id = state_map.get(st_code) or next(iter(state_map.values()))
-            city_tuples.add((c_name, st_id))
-
-        for c_name, st_id in city_tuples:
-            self._session.execute(
-                sqlite_insert(City)
-                .values([{"name": c_name, "state_id": st_id}])
-                .on_conflict_do_nothing(index_elements=["name", "state_id"])
-            )
-        self._session.flush()
-
-        city_map: Dict[str, int] = {}
-        for city_entity in self._session.execute(
-            select(City).where(City.name.in_([ct[0] for ct in city_tuples]))
-        ).scalars():
-            city_map[city_entity.name] = city_entity.id
-
-        flag_map: Dict[str, int] = {}
-        for i in range(0, len(flags), CHUNK_SIZE):
-            chunk_fl = flags[i : i + CHUNK_SIZE]
-            for flag_entity in self._session.execute(
-                select(Flag).where(Flag.flag.in_(chunk_fl))
-            ).scalars():
-                flag_map[flag_entity.flag] = flag_entity.id
-
-        biz_map: Dict[str, int] = {}
-        for i in range(0, len(flags), CHUNK_SIZE):
-            chunk_bz = flags[i : i + CHUNK_SIZE]
-            for biz_entity in self._session.execute(
-                select(Business).where(Business.business.in_(chunk_bz))
-            ).scalars():
-                biz_map[biz_entity.business] = biz_entity.id
-
-        branch_map: Dict[str, int] = {}
-        for i in range(0, len(branches), CHUNK_SIZE):
-            chunk_br = branches[i : i + CHUNK_SIZE]
-            for branch_entity in self._session.execute(
-                select(Branch).where(Branch.branch.in_(chunk_br))
-            ).scalars():
-                branch_map[branch_entity.branch] = branch_entity.id
-
-        for s in stores:
-            store_code = _get_store_code(s)
-            city_str = _get_city_name(s)
-            city_id = city_map.get(city_str)
+            code = _get_store_code(s)
+            if not code:
+                continue
 
             place_ref = getattr(s, "place", None)
-            address_val = (
-                getattr(place_ref, "address", None)
-                if place_ref
-                else getattr(s, "address", None)
+            addr = getattr(place_ref, "address", None) if place_ref else getattr(s, "address", None)
+            lat = getattr(place_ref, "latitude", None) if place_ref else getattr(s, "latitude", None)
+            lon = getattr(place_ref, "longitude", None) if place_ref else getattr(s, "longitude", None)
+
+            rows.append(
+                {
+                    "code": code,
+                    "sepa_id": getattr(s, "sepa_id", None),
+                    "comercio_id": getattr(s, "comercio_id", None),
+                    "bandera_id": getattr(s, "bandera_id", None),
+                    "sucursal_id": getattr(s, "sucursal_id", None),
+                    "business_name": getattr(s, "business_name", None) or _get_chain_name(s),
+                    "holding_group": getattr(s, "holding_group", None),
+                    "brand_name": _get_chain_name(s),
+                    "store_format": getattr(s, "store_format", None),
+                    "branch_name": _get_store_name(s),
+                    "address": str(addr) if addr is not None else None,
+                    "city": _get_city_name(s),
+                    "province": getattr(s, "province", "Buenos Aires"),
+                    "province_code": getattr(s, "province_code", "AR-B"),
+                    "latitude": float(lat) if lat is not None else None,
+                    "longitude": float(lon) if lon is not None else None,
+                }
             )
-            addr_str: Optional[str] = None
-            if address_val is not None:
-                if hasattr(address_val, "address"):
-                    addr_str = str(address_val.address)
-                else:
-                    addr_str = str(address_val)
 
-            lat_val = (
-                getattr(place_ref, "latitude", None)
-                if place_ref
-                else getattr(s, "latitude", None)
+        for i in range(0, len(rows), CHUNK_SIZE):
+            chunk = rows[i : i + CHUNK_SIZE]
+            stmt = (
+                sqlite_insert(PointOfSale)
+                .values(chunk)
+                .on_conflict_do_nothing(index_elements=["code"])
             )
-            lon_val = (
-                getattr(place_ref, "longitude", None)
-                if place_ref
-                else getattr(s, "longitude", None)
-            )
-
-            pos = self._session.execute(
-                select(Store).where(Store.code == store_code)
-            ).scalar_one_or_none()
-
-            chain_str = _get_chain_name(s)
-            store_str = _get_store_name(s)
-            flag_id = flag_map.get(chain_str)
-            biz_id = biz_map.get(chain_str)
-            branch_id = branch_map.get(store_str)
-
-            lat_float = float(lat_val) if lat_val is not None else None
-            lon_float = float(lon_val) if lon_val is not None else None
-
-            if pos and pos.place_id:
-                place = self._session.get(Place, pos.place_id)
-                if place:
-                    place.address = addr_str
-                    place.city_id = city_id
-                    place.latitude = lat_float
-                    place.longitude = lon_float
-                else:
-                    place = Place(
-                        address=addr_str,
-                        city_id=city_id,
-                        latitude=lat_float,
-                        longitude=lon_float,
-                    )
-                    self._session.add(place)
-                    self._session.flush()
-                    pos.place_id = place.id
-                pos.flag_id = flag_id
-                pos.business_id = biz_id
-                pos.branch_id = branch_id
-            elif pos:
-                place = Place(
-                    address=addr_str,
-                    city_id=city_id,
-                    latitude=lat_float,
-                    longitude=lon_float,
-                )
-                self._session.add(place)
-                self._session.flush()
-                pos.flag_id = flag_id
-                pos.business_id = biz_id
-                pos.branch_id = branch_id
-                pos.place_id = place.id
-            else:
-                place = Place(
-                    address=addr_str,
-                    city_id=city_id,
-                    latitude=lat_float,
-                    longitude=lon_float,
-                )
-                self._session.add(place)
-                self._session.flush()
-                pos = Store(
-                    code=store_code,
-                    flag_id=flag_id,
-                    business_id=biz_id,
-                    branch_id=branch_id,
-                    place_id=place.id,
-                )
-                self._session.add(pos)
+            self._session.execute(stmt)
 
         self._session.commit()
 
     def search_articles(
         self, query: str, limit: int = 50, mode: str = "fuzzy"
-    ) -> List[ArticleCard]:
-        """
-        Searches articles in the catalog by description, brand, category, or EAN.
-        Supports exact search or approximate/fuzzy search using Levenshtein distance.
-        """
+    ) -> List[Article]:
         try:
             q = (query or "").strip()
             if not q:
                 return []
 
             base_stmt = (
-                select(ArticleCard)
-                .join(
-                    ArticleNumber,
-                    ArticleCard.article_number_id == ArticleNumber.id,
-                )
-                .join(
-                    ArticleDescription,
-                    ArticleCard.description_id == ArticleDescription.id,
-                )
-                .outerjoin(ArticleBrand, ArticleCard.brand_id == ArticleBrand.id)
-                .outerjoin(
-                    ArticleCategory,
-                    ArticleCard.category_id == ArticleCategory.id,
-                )
+                select(Article)
                 .options(
-                    joinedload(ArticleCard.article_number),
-                    joinedload(ArticleCard.description),
-                    joinedload(ArticleCard.brand),
-                    joinedload(ArticleCard.category),
+                    joinedload(Article.brand),
+                    joinedload(Article.category),
+                    selectinload(Article.tags),
                 )
             )
+
+            # 1. Exact / Direct EAN search if numeric
+            if q.isdigit() and len(q) >= 6:
+                ean_res = self._session.execute(
+                    base_stmt.where(Article.ean == q).limit(limit)
+                ).scalars().unique().all()
+                if ean_res:
+                    return list(ean_res)
 
             if mode == "exact":
                 pattern = f"%{q}%"
                 stmt = base_stmt.where(
-                    (ArticleDescription.content.ilike(pattern))
-                    | (ArticleBrand.brand.ilike(pattern))
-                    | (ArticleCategory.content.ilike(pattern))
-                    | (ArticleNumber.ean == q)
+                    (Article.name.ilike(pattern))
+                    | (Article.clean_description.ilike(pattern))
+                    | (Article.brand_name.ilike(pattern))
+                    | (Article.ean == q)
                 ).limit(limit)
-                return list(self._session.execute(stmt).scalars().all())
+                return list(self._session.execute(stmt).scalars().unique().all())
 
-            # Fuzzy / Approximate search
-            candidates_map: Dict[int, ArticleCard] = {}
+            # Fuzzy / Approximate Token Matching
+            candidates_map: Dict[str, Article] = {}
 
-            # 1. Exact EAN search if query looks like a code
-            if q.isdigit() and len(q) >= 6:
-                ean_stmt = base_stmt.where(ArticleNumber.ean == q).limit(limit)
-                for card in self._session.execute(ean_stmt).scalars():
-                    candidates_map[card.id] = card
+            # Exact EAN check
+            for a in self._session.execute(base_stmt.where(Article.ean == q).limit(limit)).scalars().unique():
+                candidates_map[a.ean] = a
 
-            # 2. Token-based ILIKE candidate matching
             tokens = [t.lower() for t in q.split() if t]
             conditions = []
             for tok in tokens:
                 t_pat = f"%{tok}%"
                 conditions.extend(
                     [
-                        ArticleDescription.content.ilike(t_pat),
-                        ArticleBrand.brand.ilike(t_pat),
-                        ArticleCategory.content.ilike(t_pat),
-                        ArticleNumber.ean == tok,
+                        Article.name.ilike(t_pat),
+                        Article.clean_description.ilike(t_pat),
+                        Article.brand_name.ilike(t_pat),
                     ]
                 )
 
             if conditions:
                 token_stmt = base_stmt.where(or_(*conditions)).limit(limit * 3)
-                for card in self._session.execute(token_stmt).scalars():
-                    candidates_map[card.id] = card
+                for a in self._session.execute(token_stmt).scalars().unique():
+                    candidates_map[a.ean] = a
 
-            # 3. If candidates are few (< limit), check fuzzy Levenshtein match on brands
+            # Fallback if few candidates: check brands
             if len(candidates_map) < limit:
-                all_brands = self._session.execute(select(ArticleBrand)).scalars().all()
-                matched_brand_ids = [
-                    b.id
+                all_brands = self._session.execute(select(Brand)).scalars().all()
+                matched_brand_names = [
+                    b.name
                     for b in all_brands
-                    if any(
-                        fuzzy_similarity_ratio(tok, b.brand) >= 0.75 for tok in tokens
-                    )
-                    or fuzzy_similarity_ratio(q, b.brand) >= 0.75
+                    if any(fuzzy_similarity_ratio(tok, b.name) >= 0.75 for tok in tokens)
+                    or fuzzy_similarity_ratio(q, b.name) >= 0.75
                 ]
-                if matched_brand_ids:
+                if matched_brand_names:
                     brand_stmt = base_stmt.where(
-                        ArticleCard.brand_id.in_(matched_brand_ids[:20])
+                        Article.brand_name.in_(matched_brand_names[:20])
                     ).limit(limit * 2)
-                    for card in self._session.execute(brand_stmt).scalars():
-                        candidates_map[card.id] = card
+                    for a in self._session.execute(brand_stmt).scalars().unique():
+                        candidates_map[a.ean] = a
 
-            # Fallback: if still few candidates, fetch a small catalog slice to test typos
+            # If still few candidates, test small sample
             if len(candidates_map) < limit:
                 sample_stmt = base_stmt.limit(100)
-                for card in self._session.execute(sample_stmt).scalars():
-                    candidates_map[card.id] = card
+                for a in self._session.execute(sample_stmt).scalars().unique():
+                    candidates_map[a.ean] = a
 
-            # 4. Rank candidates by similarity score
-            scored_cards: List[Tuple[float, ArticleCard]] = []
+            # Rank candidates by similarity score
+            scored: List[Tuple[float, Article]] = []
             q_lower = q.lower()
 
-            for card in candidates_map.values():
-                if card.ean == q:
-                    scored_cards.append((10.0, card))
+            for a in candidates_map.values():
+                if a.ean == q:
+                    scored.append((10.0, a))
                     continue
 
-                desc_str = (card.name or "").lower()
-                brand_str = (card.brand_name or "").lower()
-                cat_str = (card.category_name or "").lower()
-                full_text = f"{desc_str} {brand_str} {cat_str}"
+                desc_str = (a.name or a.clean_description or "").lower()
+                b_str = (a.brand_name or "").lower()
+                cat_str = (a.category.name if a.category else "").lower()
+                full_text = f"{desc_str} {b_str} {cat_str}"
 
                 if q_lower in full_text:
                     score = 5.0 + (len(q_lower) / max(len(full_text), 1))
@@ -594,63 +382,161 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                     avg_tok = sum(tok_scores) / len(tok_scores) if tok_scores else 0.0
                     score = max(
                         fuzzy_similarity_ratio(q_lower, desc_str),
-                        fuzzy_similarity_ratio(q_lower, brand_str),
+                        fuzzy_similarity_ratio(q_lower, b_str),
                         avg_tok,
                     )
 
                 if score >= 0.35:
-                    scored_cards.append((score, card))
+                    scored.append((score, a))
 
-            scored_cards.sort(key=lambda pair: pair[0], reverse=True)
-            return [card for _, card in scored_cards[:limit]]
+            scored.sort(key=lambda pair: pair[0], reverse=True)
+            return [a for _, a in scored[:limit]]
         except Exception as exc:
             logger.error(
                 "Error executing search_articles (query=%r, mode=%s): %s",
                 query,
                 mode,
                 exc,
-                exc_info=True,
             )
             raise
 
-    def get_article_by_ean(self, ean: str) -> Optional[ArticleCard]:
+    def get_article_by_ean(self, ean: str) -> Optional[Article]:
         stmt = (
-            select(ArticleCard)
-            .join(ArticleNumber, ArticleCard.article_number_id == ArticleNumber.id)
-            .join(
-                ArticleDescription,
-                ArticleCard.description_id == ArticleDescription.id,
-            )
-            .outerjoin(ArticleBrand, ArticleCard.brand_id == ArticleBrand.id)
-            .outerjoin(ArticleCategory, ArticleCard.category_id == ArticleCategory.id)
+            select(Article)
             .options(
-                joinedload(ArticleCard.article_number),
-                joinedload(ArticleCard.description),
-                joinedload(ArticleCard.brand),
-                joinedload(ArticleCard.category),
+                joinedload(Article.brand),
+                joinedload(Article.category),
+                selectinload(Article.tags),
             )
-            .where(ArticleNumber.ean == ean)
+            .where(Article.ean == str(ean).strip())
         )
-        return self._session.execute(stmt).scalars().first()
+        return self._session.execute(stmt).scalars().unique().first()
 
-    def get_stores_by_city(self, city: str) -> List[Store]:
+    def get_stores_by_city(self, city: str) -> List[PointOfSale]:
         stmt = (
-            select(Store)
-            .join(Place, Store.place_id == Place.id)
-            .join(City, Place.city_id == City.id)
-            .outerjoin(Flag, Store.flag_id == Flag.id)
-            .outerjoin(Branch, Store.branch_id == Branch.id)
-            .outerjoin(Business, Store.business_id == Business.id)
-            .options(
-                joinedload(Store.place).joinedload(Place.city).joinedload(City.state),
-                joinedload(Store.flag),
-                joinedload(Store.branch),
-                joinedload(Store.business),
-            )
-            .where(City.name == city)
+            select(PointOfSale)
+            .where(func.lower(PointOfSale.city) == func.lower(city.strip()))
+            .order_by(PointOfSale.brand_name, PointOfSale.branch_name)
         )
-        results = self._session.execute(stmt).scalars().all()
-        return list(results)
+        return list(self._session.execute(stmt).scalars().all())
+
+    def get_cities_for_region(self, region: str) -> List[str]:
+        # 1. Prefer cities in the region that have points of sale with recorded prices
+        if region:
+            stmt_with_prices = (
+                select(PointOfSale.city)
+                .join(DailyPrice, DailyPrice.store_code == PointOfSale.code)
+                .where(
+                    func.upper(PointOfSale.province_code) == region.strip().upper(),
+                    PointOfSale.city.isnot(None),
+                    PointOfSale.city != "",
+                )
+                .distinct()
+                .order_by(PointOfSale.city)
+            )
+            cities = list(self._session.execute(stmt_with_prices).scalars().all())
+            if cities:
+                return cities
+
+            # 2. Fallback to points of sale for that region
+            stmt_pos = (
+                select(PointOfSale.city)
+                .where(
+                    func.upper(PointOfSale.province_code) == region.strip().upper(),
+                    PointOfSale.city.isnot(None),
+                    PointOfSale.city != "",
+                    PointOfSale.city != PointOfSale.province,
+                )
+                .distinct()
+                .order_by(PointOfSale.city)
+            )
+            cities = list(self._session.execute(stmt_pos).scalars().all())
+            if cities:
+                return cities
+
+        # 3. Fallback: all distinct cities in points_of_sale
+        stmt_all = (
+            select(PointOfSale.city)
+            .where(PointOfSale.city.isnot(None), PointOfSale.city != "")
+            .distinct()
+            .order_by(PointOfSale.city)
+        )
+        return list(self._session.execute(stmt_all).scalars().all())
+
+    # Taxonomy navigation methods
+    def get_departments(self) -> List[Category]:
+        stmt = (
+            select(Category)
+            .where(Category.level == 1)
+            .order_by(Category.name)
+            .options(joinedload(Category.children))
+        )
+        return list(self._session.execute(stmt).scalars().unique().all())
+
+    def get_subcategories(self, department_slug: str) -> List[Category]:
+        parent_cat = aliased(Category)
+        stmt = (
+            select(Category)
+            .join(parent_cat, Category.parent_id == parent_cat.id)
+            .where(parent_cat.slug == department_slug)
+            .order_by(Category.name)
+        )
+        return list(self._session.execute(stmt).scalars().all())
+
+    def get_articles_by_subcategory(
+        self, subcategory_slug: str, limit: int = 50
+    ) -> List[Article]:
+        stmt = (
+            select(Article)
+            .join(Category, Article.category_id == Category.id)
+            .where(Category.slug == subcategory_slug)
+            .options(
+                joinedload(Article.brand),
+                joinedload(Article.category),
+                selectinload(Article.tags),
+            )
+            .limit(limit)
+        )
+        return list(self._session.execute(stmt).scalars().unique().all())
+
+    def get_articles_by_tag(self, tag_name: str, limit: int = 50) -> List[Article]:
+        stmt = (
+            select(Article)
+            .join(Article.tags)
+            .where(Tag.name == tag_name)
+            .options(
+                joinedload(Article.brand),
+                joinedload(Article.category),
+                selectinload(Article.tags),
+            )
+            .limit(limit)
+        )
+        return list(self._session.execute(stmt).scalars().unique().all())
+
+    def get_candidate_substitutions(
+        self, ean: str, limit: int = 5
+    ) -> List[Article]:
+        current = self.get_article_by_ean(ean)
+        if not current or not current.category_id:
+            return []
+
+        stmt = (
+            select(Article)
+            .where(
+                Article.category_id == current.category_id,
+                Article.ean != current.ean,
+            )
+            .options(
+                joinedload(Article.brand),
+                joinedload(Article.category),
+                selectinload(Article.tags),
+            )
+        )
+        if current.package_unit:
+            stmt = stmt.where(Article.package_unit == current.package_unit)
+        stmt = stmt.limit(limit)
+        return list(self._session.execute(stmt).scalars().unique().all())
+
 
 
 class SqlAlchemyPriceRepository(PriceRepositoryPort):
@@ -659,12 +545,11 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
     def __init__(self, session: Session):
         self._session = session
 
-    def save_prices(self, prices: List[Price], batch_size: int = 10_000) -> None:
+    def save_prices(self, prices: List[Any], batch_size: int = 10_000) -> None:
         if not prices:
             return
 
-        # 1. Distinct Timestamps (Timestamp.value is date)
-        distinct_dates: Set[date] = set()
+        rows = []
         for p in prices:
             raw_d = getattr(p, "date", None) or getattr(p, "price_date", None)
             if not raw_d and hasattr(p, "timestamp") and p.timestamp is not None:
@@ -675,246 +560,46 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
                     raw_d = ts_val
             elif isinstance(raw_d, datetime):
                 raw_d = raw_d.date()
-            if isinstance(raw_d, date):
-                distinct_dates.add(raw_d)
 
-        for p_date in distinct_dates:
-            stmt = (
-                sqlite_insert(Timestamp)
-                .values([{"value": p_date}])
-                .on_conflict_do_nothing(index_elements=["value"])
-            )
-            self._session.execute(stmt)
-        self._session.flush()
-
-        timestamp_map: Dict[date, int] = {}
-        for ts in self._session.execute(
-            select(Timestamp).where(Timestamp.value.in_(list(distinct_dates)))
-        ).scalars():
-            timestamp_map[ts.value] = ts.id
-
-        # 2. Distinct Article Numbers (table article_numbers)
-        distinct_eans_set: Set[str] = set()
-        for p in prices:
-            e_str = _get_ean_str(p)
-            if e_str:
-                distinct_eans_set.add(e_str)
-        distinct_eans = list(distinct_eans_set)
-
-        for i in range(0, len(distinct_eans), CHUNK_SIZE):
-            chunk_eans = [{"ean": e} for e in distinct_eans[i : i + CHUNK_SIZE]]
-            stmt = (
-                sqlite_insert(ArticleNumber)
-                .values(chunk_eans)
-                .on_conflict_do_nothing(index_elements=["ean"])
-            )
-            self._session.execute(stmt)
-        self._session.flush()
-
-        number_map: Dict[str, int] = {}
-        for i in range(0, len(distinct_eans), CHUNK_SIZE):
-            chunk_en = distinct_eans[i : i + CHUNK_SIZE]
-            for an in self._session.execute(
-                select(ArticleNumber).where(ArticleNumber.ean.in_(chunk_en))
-            ).scalars():
-                number_map[an.ean] = an.id
-
-        # 3. Distinct Stores (table stores)
-        distinct_stores_set: Set[str] = set()
-        for p in prices:
+            ean = _get_ean_str(p)
             st_ref = getattr(p, "store", None)
-            if st_ref is not None:
-                distinct_stores_set.add(_get_store_code(st_ref))
-            else:
-                code_val = getattr(p, "store_code", None) or getattr(
-                    p, "store_id", None
-                )
-                if code_val is not None:
-                    distinct_stores_set.add(str(code_val))
-        distinct_stores = list(distinct_stores_set)
-
-        for i in range(0, len(distinct_stores), CHUNK_SIZE):
-            chunk_st = [{"code": s} for s in distinct_stores[i : i + CHUNK_SIZE]]
-            stmt = (
-                sqlite_insert(Store)
-                .values(chunk_st)
-                .on_conflict_do_nothing(index_elements=["code"])
+            store_code = (
+                _get_store_code(st_ref)
+                if st_ref is not None
+                else (getattr(p, "store_code", None) or getattr(p, "store_id", None))
             )
-            self._session.execute(stmt)
-        self._session.flush()
+            amt = getattr(p, "amount", None) or getattr(p, "price", 0)
 
-        store_map: Dict[str, int] = {}
-        for i in range(0, len(distinct_stores), CHUNK_SIZE):
-            chunk_sc = distinct_stores[i : i + CHUNK_SIZE]
-            for st in self._session.execute(
-                select(Store).where(Store.code.in_(chunk_sc))
-            ).scalars():
-                store_map[st.code] = st.id
-
-        # 4. Insert/Upsert Prices in chunked batches
-        values = []
-        for p in prices:
-            p_date_val: Optional[date] = getattr(p, "date", None) or getattr(
-                p, "price_date", None
-            )
-            if (
-                p_date_val is None
-                and hasattr(p, "timestamp")
-                and p.timestamp is not None
-            ):
-                ts_inner = getattr(p.timestamp, "value", p.timestamp)
-                if isinstance(ts_inner, datetime):
-                    p_date_val = ts_inner.date()
-                elif isinstance(ts_inner, date):
-                    p_date_val = ts_inner
-            elif isinstance(p_date_val, datetime):
-                p_date_val = p_date_val.date()
-
-            ts_id = timestamp_map.get(p_date_val) if p_date_val else None
-            art_id = number_map.get(_get_ean_str(p))
-
-            store_ref = getattr(p, "store_code", None)
-            if not store_ref and hasattr(p, "store") and p.store is not None:
-                store_ref = p.store.code
-            if not store_ref:
-                store_ref = getattr(p, "store_id", None)
-            st_id = store_map.get(str(store_ref)) if store_ref else None
-
-            amt_raw = getattr(p, "amount", None)
-            if amt_raw is None:
-                amt_raw = getattr(p, "price", 0)
-            amt_int = int(amt_raw) if amt_raw is not None else 0
-
-            if ts_id and art_id and st_id:
-                values.append(
+            if raw_d and ean and store_code:
+                rows.append(
                     {
-                        "amount": amt_int,
-                        "timestamp_id": ts_id,
-                        "store_id": st_id,
-                        "article_number_id": art_id,
+                        "date": raw_d,
+                        "ean": str(ean),
+                        "store_code": str(store_code),
+                        "price": int(amt),
+                        "unit_price": getattr(p, "unit_price", None),
                     }
                 )
 
-        eff_batch = min(batch_size, 200)
-        for i in range(0, len(values), eff_batch):
-            chunk_prices = values[i : i + eff_batch]
-            stmt = sqlite_insert(Price).values(chunk_prices)
+        for i in range(0, len(rows), CHUNK_SIZE):
+            chunk = rows[i : i + CHUNK_SIZE]
+            stmt = sqlite_insert(DailyPrice).values(chunk)
             stmt = stmt.on_conflict_do_update(
-                index_elements=[
-                    "timestamp_id",
-                    "store_id",
-                    "article_number_id",
-                ],
-                set_={"amount": stmt.excluded.amount},
+                index_elements=["date", "ean", "store_code"],
+                set_={
+                    "price": stmt.excluded.price,
+                    "unit_price": stmt.excluded.unit_price,
+                },
             )
             self._session.execute(stmt)
+
         self._session.commit()
 
-    def save_metrics(
-        self, metrics: List[ArticleMetric], batch_size: int = 10_000
-    ) -> None:
+    def save_metrics(self, metrics: List[Any], batch_size: int = 10_000) -> None:
         if not metrics:
             return
 
-        distinct_dates: Set[date] = set()
-        distinct_eans: Set[str] = set()
-        distinct_cities: Set[str] = set()
-
-        for m in metrics:
-            m_date_val: Optional[date] = getattr(m, "date", None)
-            if (
-                m_date_val is None
-                and hasattr(m, "timestamp")
-                and m.timestamp is not None
-            ):
-                ts_inner = getattr(m.timestamp, "value", m.timestamp)
-                if isinstance(ts_inner, datetime):
-                    m_date_val = ts_inner.date()
-                elif isinstance(ts_inner, date):
-                    m_date_val = ts_inner
-            elif isinstance(m_date_val, datetime):
-                m_date_val = m_date_val.date()
-
-            if isinstance(m_date_val, date):
-                distinct_dates.add(m_date_val)
-
-            ean = _get_ean_str(m)
-            if ean:
-                distinct_eans.add(ean)
-
-            city_name = getattr(m, "city_name", None) or (
-                m.city.name
-                if hasattr(m, "city") and m.city
-                else getattr(m, "city", "General")
-            )
-            distinct_cities.add(str(city_name))
-
-        # 1. Timestamps
-        for d in distinct_dates:
-            self._session.execute(
-                sqlite_insert(Timestamp)
-                .values([{"value": d}])
-                .on_conflict_do_nothing(index_elements=["value"])
-            )
-        self._session.flush()
-        ts_map = {
-            ts.value: ts.id
-            for ts in self._session.execute(
-                select(Timestamp).where(Timestamp.value.in_(list(distinct_dates)))
-            ).scalars()
-        }
-
-        # 2. ArticleNumbers
-        distinct_eans_list = list(distinct_eans)
-        for i in range(0, len(distinct_eans_list), CHUNK_SIZE):
-            chunk_eans = [{"ean": e} for e in distinct_eans_list[i : i + CHUNK_SIZE]]
-            self._session.execute(
-                sqlite_insert(ArticleNumber)
-                .values(chunk_eans)
-                .on_conflict_do_nothing(index_elements=["ean"])
-            )
-        self._session.flush()
-
-        num_map = {}
-        for i in range(0, len(distinct_eans_list), CHUNK_SIZE):
-            chunk_en = distinct_eans_list[i : i + CHUNK_SIZE]
-            for an in self._session.execute(
-                select(ArticleNumber).where(ArticleNumber.ean.in_(chunk_en))
-            ).scalars():
-                num_map[an.ean] = an.id
-
-        # 3. Cities
-        existing_cities = {
-            c.name: c.id
-            for c in self._session.execute(
-                select(City).where(City.name.in_(list(distinct_cities)))
-            ).scalars()
-        }
-        missing_cities = [c for c in distinct_cities if c not in existing_cities]
-
-        if missing_cities:
-            default_state = self._session.execute(select(State)).scalars().first()
-            if not default_state:
-                default_state = State(code="AR-B", name="Buenos Aires")
-                self._session.add(default_state)
-                self._session.flush()
-
-            for c in missing_cities:
-                self._session.execute(
-                    sqlite_insert(City)
-                    .values([{"name": c, "state_id": default_state.id}])
-                    .on_conflict_do_nothing(index_elements=["name", "state_id"])
-                )
-            self._session.flush()
-
-        city_map = {
-            c.name: c.id
-            for c in self._session.execute(
-                select(City).where(City.name.in_(list(distinct_cities)))
-            ).scalars()
-        }
-
-        values = []
+        rows = []
         for m in metrics:
             m_date_val = getattr(m, "date", None)
             if (
@@ -930,114 +615,83 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
             elif isinstance(m_date_val, datetime):
                 m_date_val = m_date_val.date()
 
-            ts_id = getattr(m, "timestamp_id", None) or (
-                ts_map.get(m_date_val) if m_date_val else None
-            )
             ean = _get_ean_str(m)
-            num_id = getattr(m, "article_number_id", None) or num_map.get(ean)
-
-            c_name = getattr(m, "city_name", None) or (
+            city_name = getattr(m, "city_name", None) or (
                 m.city.name
-                if hasattr(m, "city") and m.city
+                if hasattr(m, "city") and hasattr(m.city, "name")
                 else getattr(m, "city", "General")
             )
-            city_id = getattr(m, "city_id", None) or city_map.get(str(c_name))
 
-            if ts_id and num_id and city_id:
-                values.append(
+            ref_p = getattr(m, "reference_price", None)
+            med_p = getattr(m, "median_price", None) or ref_p
+
+            if m_date_val and ean and city_name:
+                rows.append(
                     {
-                        "timestamp_id": ts_id,
-                        "article_number_id": num_id,
-                        "city_id": city_id,
+                        "date": m_date_val,
+                        "ean": str(ean),
+                        "city": str(city_name),
                         "min_price": getattr(m, "min_price", None),
                         "max_price": getattr(m, "max_price", None),
-                        "reference_price": getattr(m, "reference_price", None),
+                        "median_price": int(med_p) if med_p is not None else None,
+                        "geo_mean_price": getattr(m, "geo_mean_price", None),
                         "price_dispersion": getattr(m, "price_dispersion", None),
+                        "pct_change_7d": getattr(m, "pct_change_7d", None),
+                        "pct_change_30d": getattr(m, "pct_change_30d", None),
+                        "pct_change_90d": getattr(m, "pct_change_90d", None),
                     }
                 )
 
-        eff_batch = min(batch_size, 80)
-        for i in range(0, len(values), eff_batch):
-            chunk_metrics = values[i : i + eff_batch]
-            stmt = sqlite_insert(ArticleMetric).values(chunk_metrics)
+        for i in range(0, len(rows), CHUNK_SIZE):
+            chunk = rows[i : i + CHUNK_SIZE]
+            stmt = sqlite_insert(DailyProductMetric).values(chunk)
             stmt = stmt.on_conflict_do_update(
-                index_elements=[
-                    "timestamp_id",
-                    "article_number_id",
-                    "city_id",
-                ],
+                index_elements=["date", "ean", "city"],
                 set_={
                     "min_price": stmt.excluded.min_price,
                     "max_price": stmt.excluded.max_price,
-                    "reference_price": stmt.excluded.reference_price,
+                    "median_price": stmt.excluded.median_price,
+                    "geo_mean_price": stmt.excluded.geo_mean_price,
                     "price_dispersion": stmt.excluded.price_dispersion,
                 },
             )
             self._session.execute(stmt)
+
         self._session.commit()
 
     def delete_prices_for_date(self, price_date: date) -> int:
-        ts_ids = (
-            self._session.execute(
-                select(Timestamp.id).where(Timestamp.value == price_date)
-            )
-            .scalars()
-            .all()
-        )
-        if not ts_ids:
-            return 0
-        stmt = delete(Price).where(Price.timestamp_id.in_(ts_ids))
+        stmt = delete(DailyPrice).where(DailyPrice.date == price_date)
         result = self._session.execute(stmt)
         self._session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
     def delete_metrics_for_date(self, metric_date: date) -> int:
-        ts_ids = (
-            self._session.execute(
-                select(Timestamp.id).where(Timestamp.value == metric_date)
-            )
-            .scalars()
-            .all()
-        )
-        if not ts_ids:
-            return 0
-        stmt = delete(ArticleMetric).where(ArticleMetric.timestamp_id.in_(ts_ids))
+        stmt = delete(DailyProductMetric).where(DailyProductMetric.date == metric_date)
         result = self._session.execute(stmt)
         self._session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
     def get_prices_for_basket(
         self, city: str, price_date: date, eans: List[str]
-    ) -> List[Price]:
-        results: List[Price] = []
+    ) -> List[DailyPrice]:
+        results: List[DailyPrice] = []
         for i in range(0, len(eans), CHUNK_SIZE):
             chunk_eans = eans[i : i + CHUNK_SIZE]
             stmt = (
-                select(Price)
-                .join(Store, Price.store_id == Store.id)
-                .join(Place, Store.place_id == Place.id)
-                .join(City, Place.city_id == City.id)
-                .join(ArticleNumber, Price.article_number_id == ArticleNumber.id)
-                .join(Timestamp, Price.timestamp_id == Timestamp.id)
+                select(DailyPrice)
+                .join(PointOfSale, DailyPrice.store_code == PointOfSale.code)
+                .join(Article, DailyPrice.ean == Article.ean)
                 .options(
-                    joinedload(Price.store)
-                    .joinedload(Store.place)
-                    .joinedload(Place.city),
-                    joinedload(Price.store).joinedload(Store.flag),
-                    joinedload(Price.store).joinedload(Store.branch),
-                    joinedload(Price.store).joinedload(Store.business),
-                    joinedload(Price.article_number),
-                    joinedload(Price.timestamp),
+                    joinedload(DailyPrice.point_of_sale),
+                    joinedload(DailyPrice.article),
                 )
                 .where(
-                    City.name == city,
-                    Timestamp.value == price_date,
-                    ArticleNumber.ean.in_(chunk_eans),
+                    func.lower(PointOfSale.city) == func.lower(city.strip()),
+                    DailyPrice.date == price_date,
+                    DailyPrice.ean.in_(chunk_eans),
                 )
             )
-            chunk_results = self._session.execute(stmt).scalars().all()
-            results.extend(chunk_results)
-
+            results.extend(self._session.execute(stmt).scalars().all())
         return results
 
     def get_reference_prices(
@@ -1047,25 +701,195 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         for i in range(0, len(eans), CHUNK_SIZE):
             chunk_eans = eans[i : i + CHUNK_SIZE]
             stmt = (
-                select(ArticleNumber.ean, ArticleMetric.reference_price)
-                .join(
-                    ArticleNumber,
-                    ArticleMetric.article_number_id == ArticleNumber.id,
-                )
-                .join(City, ArticleMetric.city_id == City.id)
-                .join(Timestamp, ArticleMetric.timestamp_id == Timestamp.id)
+                select(DailyProductMetric.ean, DailyProductMetric.median_price)
                 .where(
-                    City.name == city,
-                    Timestamp.value == price_date,
-                    ArticleNumber.ean.in_(chunk_eans),
+                    func.lower(DailyProductMetric.city) == func.lower(city.strip()),
+                    DailyProductMetric.date == price_date,
+                    DailyProductMetric.ean.in_(chunk_eans),
                 )
             )
-            results = self._session.execute(stmt).all()
-            for ean, ref_p in results:
-                if ref_p is not None:
-                    ref_dict[ean] = int(ref_p)
-
+            for ean_val, med_p in self._session.execute(stmt).all():
+                if med_p is not None:
+                    ref_dict[ean_val] = int(med_p)
         return ref_dict
+
+    def get_latest_price_date(self) -> Optional[date]:
+        stmt = select(func.max(DailyPrice.date))
+        res = self._session.execute(stmt).scalar()
+        if res:
+            if isinstance(res, str):
+                return date.fromisoformat(res)
+            return res
+        return None
+
+    def get_article_price_stats(
+        self, ean: str, city: Optional[str] = None, price_date: Optional[date] = None
+    ) -> Optional[ArticlePriceStats]:
+        clean_ean = str(ean).strip()
+        article_stmt = (
+            select(Article)
+            .options(joinedload(Article.brand), joinedload(Article.category))
+            .where(Article.ean == clean_ean)
+        )
+        article = self._session.execute(article_stmt).scalars().first()
+        if not article:
+            return None
+
+        # Determine target date
+        target_date = price_date
+        if not target_date:
+            metric_date_stmt = select(func.max(DailyProductMetric.date)).where(
+                DailyProductMetric.ean == clean_ean
+            )
+            if city:
+                metric_date_stmt = metric_date_stmt.where(
+                    func.lower(DailyProductMetric.city) == func.lower(city.strip())
+                )
+            target_date = self._session.execute(metric_date_stmt).scalar()
+
+        if not target_date:
+            price_date_stmt = select(func.max(DailyPrice.date)).where(
+                DailyPrice.ean == clean_ean
+            )
+            if city:
+                price_date_stmt = price_date_stmt.join(
+                    PointOfSale, DailyPrice.store_code == PointOfSale.code
+                ).where(func.lower(PointOfSale.city) == func.lower(city.strip()))
+            target_date = self._session.execute(price_date_stmt).scalar()
+
+        if isinstance(target_date, str):
+            target_date = date.fromisoformat(target_date)
+
+        if not target_date:
+            return ArticlePriceStats(
+                ean=article.ean,
+                name=article.name,
+                clean_description=article.clean_description,
+                brand_name=article.brand_name,
+                package=article.package,
+                category_name=article.category.name if article.category else None,
+                date=None,
+                city=city,
+                min_price=None,
+                max_price=None,
+                reference_price=None,
+                price_dispersion=None,
+                cheapest_store=None,
+                most_expensive_store=None,
+                stores_count=0,
+                store_prices=[],
+            )
+
+        # Observed store prices on target_date
+        price_stmt = (
+            select(DailyPrice, PointOfSale)
+            .join(PointOfSale, DailyPrice.store_code == PointOfSale.code)
+            .where(DailyPrice.ean == clean_ean, DailyPrice.date == target_date)
+        )
+        if city:
+            price_stmt = price_stmt.where(
+                func.lower(PointOfSale.city) == func.lower(city.strip())
+            )
+
+        price_stmt = price_stmt.order_by(DailyPrice.price.asc())
+        price_rows = self._session.execute(price_stmt).all()
+
+        store_details: List[StorePriceDetail] = []
+        observed_prices: List[int] = []
+
+        for dp, pos in price_rows:
+            observed_prices.append(dp.price)
+            store_details.append(
+                StorePriceDetail(
+                    chain_name=pos.chain_name or pos.brand_name or "Comercio",
+                    branch_name=pos.branch_name or "",
+                    city=pos.city or "",
+                    price=dp.price,
+                    unit_price=dp.unit_price,
+                    unit=article.package_unit or None,
+                    date=dp.date,
+                )
+            )
+
+        # Precomputed metrics on target_date
+        metric_stmt = select(DailyProductMetric).where(
+            DailyProductMetric.ean == clean_ean, DailyProductMetric.date == target_date
+        )
+        if city:
+            metric_stmt = metric_stmt.where(
+                func.lower(DailyProductMetric.city) == func.lower(city.strip())
+            )
+
+        metrics = self._session.execute(metric_stmt).scalars().all()
+
+        min_p: Optional[int] = None
+        max_p: Optional[int] = None
+        ref_p: Optional[int] = None
+        dispersion: Optional[float] = None
+
+        if metrics:
+            valid_min = [m.min_price for m in metrics if m.min_price is not None]
+            valid_max = [m.max_price for m in metrics if m.max_price is not None]
+            valid_ref = [m.median_price for m in metrics if m.median_price is not None]
+            valid_disp = [
+                m.price_dispersion for m in metrics if m.price_dispersion is not None
+            ]
+
+            if valid_min:
+                min_p = min(valid_min)
+            if valid_max:
+                max_p = max(valid_max)
+            if valid_ref:
+                ref_p = PriceMetricsCalculator.calculate_reference_price(valid_ref)
+            if valid_disp:
+                dispersion = round(sum(valid_disp) / len(valid_disp), 4)
+
+        if observed_prices:
+            if min_p is None or min_p > min(observed_prices):
+                min_p = min(observed_prices)
+            if max_p is None or max_p < max(observed_prices):
+                max_p = max(observed_prices)
+            if ref_p is None:
+                ref_p = PriceMetricsCalculator.calculate_reference_price(observed_prices)
+            if dispersion is None and len(observed_prices) > 1:
+                mean_val = sum(observed_prices) / len(observed_prices)
+                if mean_val > 0:
+                    import statistics
+                    dispersion = round(statistics.stdev(observed_prices) / mean_val, 4)
+
+        cheapest_store = (
+            f"{store_details[0].chain_name} ({store_details[0].branch_name})".strip()
+            if store_details
+            else None
+        )
+        most_expensive_store = (
+            f"{store_details[-1].chain_name} ({store_details[-1].branch_name})".strip()
+            if store_details
+            else None
+        )
+
+        resolved_city = city or (
+            store_details[0].city if store_details else (metrics[0].city if metrics else None)
+        )
+
+        return ArticlePriceStats(
+            ean=article.ean,
+            name=article.name,
+            clean_description=article.clean_description,
+            brand_name=article.brand_name,
+            package=article.package,
+            category_name=article.category.name if article.category else None,
+            date=target_date,
+            city=resolved_city,
+            min_price=min_p,
+            max_price=max_p,
+            reference_price=ref_p,
+            price_dispersion=dispersion,
+            cheapest_store=cheapest_store,
+            most_expensive_store=most_expensive_store,
+            stores_count=len(store_details),
+            store_prices=store_details,
+        )
 
 
 class SqlAlchemyUserRepository(UserRepositoryPort):
@@ -1083,9 +907,7 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
             return user_entity
         except Exception as exc:
             self._session.rollback()
-            logger.error(
-                "Failed to create user with email %s: %s", email, exc, exc_info=True
-            )
+            logger.error("Failed to create user with email %s: %s", email, exc)
             raise
 
     def get_user_by_email(self, email: str) -> Optional[User]:
@@ -1093,9 +915,7 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
             stmt = select(User).where(User.email == email)
             return self._session.execute(stmt).scalar_one_or_none()
         except Exception as exc:
-            logger.error(
-                "Failed to query user by email %s: %s", email, exc, exc_info=True
-            )
+            logger.error("Failed to query user by email %s: %s", email, exc)
             raise
 
     def save_basket(self, basket: Basket) -> Basket:
@@ -1135,7 +955,6 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
                 "Failed to save basket %s: %s",
                 getattr(basket, "name", "unknown"),
                 exc,
-                exc_info=True,
             )
             raise
 
@@ -1153,7 +972,6 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
                 "Failed to fetch baskets for user_id %s: %s",
                 user_id,
                 exc,
-                exc_info=True,
             )
             raise
 
@@ -1166,9 +984,7 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
             )
             return self._session.execute(stmt).scalars().first()
         except Exception as exc:
-            logger.error(
-                "Failed to fetch basket by uuid %s: %s", uuid_str, exc, exc_info=True
-            )
+            logger.error("Failed to fetch basket by uuid %s: %s", uuid_str, exc)
             raise
 
     def delete_basket(self, basket_id: int, user_id: int) -> bool:
@@ -1189,6 +1005,5 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
                 basket_id,
                 user_id,
                 exc,
-                exc_info=True,
             )
             raise

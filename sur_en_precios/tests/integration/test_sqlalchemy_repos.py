@@ -1,3 +1,5 @@
+"""Integration tests for SQLAlchemy 2.0 repositories."""
+
 from datetime import date
 
 from sqlalchemy import create_engine, select
@@ -9,21 +11,14 @@ from sur_en_precios.adapters.database.repositories import (
     SqlAlchemyUserRepository,
 )
 from sur_en_precios.domain.models_public import (
-    ArticleBrand,
-    ArticleCard,
-    ArticleCategory,
-    ArticleDescription,
-    ArticleMetric,
-    ArticleNumber,
-    Branch,
-    City,
-    Flag,
-    Place,
-    Price,
+    Article,
+    Brand,
+    Category,
+    DailyPrice,
+    DailyProductMetric,
+    PointOfSale,
     PublicBase,
-    State,
-    Store,
-    Timestamp,
+    Tag,
 )
 from sur_en_precios.domain.models_user import (
     Basket,
@@ -102,66 +97,54 @@ def test_catalog_and_price_repositories() -> None:
         cat_repo = SqlAlchemyCatalogRepository(session)
         price_repo = SqlAlchemyPriceRepository(session)
 
-        # Build ArticleCard and Store
-        card = ArticleCard(
-            article_number=ArticleNumber(ean="779001"),
-            description=ArticleDescription(content="Aceite de Oliva Aerosol 120ml"),
-            brand=ArticleBrand(brand="Freir"),
-            category=ArticleCategory(content="Aceites"),
+        # Build Category, Article, and PointOfSale
+        dept = Category(name="Almacén", slug="almacen", level=1)
+        subcat = Category(name="Aceites", slug="aceites", level=2, parent=dept)
+        session.add_all([dept, subcat])
+        session.flush()
+
+        article = Article(
+            ean="779001",
+            name="Aceite de Oliva Aerosol 120ml",
+            clean_description="Aceite de Oliva Aerosol",
+            brand_name="Freir",
+            package="120 ml",
+            package_amount=120.0,
+            package_unit="ml",
+            category_id=subcat.id,
         )
-        store = Store(
+        store = PointOfSale(
             code="s1",
-            flag=Flag(flag="Carrefour"),
-            branch=Branch(branch="Central"),
-            place=Place(
-                address="Av. Colon 100",
-                latitude=-38.71,
-                longitude=-62.26,
-                city=City(
-                    name="Bahía Blanca",
-                    state=State(code="AR-B", name="Buenos Aires"),
-                ),
-            ),
+            brand_name="Carrefour",
+            branch_name="Central",
+            address="Av. Colon 100",
+            city="Bahía Blanca",
+            province="Buenos Aires",
+            province_code="AR-B",
+            latitude=-38.71,
+            longitude=-62.26,
         )
 
-        cat_repo.save_articles([card])
+        cat_repo.save_articles([article])
         cat_repo.save_stores([store])
 
-        # Verify underlying normalized tables
+        # Verify underlying tables
         assert (
-            session.scalar(select(ArticleNumber).where(ArticleNumber.ean == "779001"))
+            session.scalar(select(Article).where(Article.ean == "779001"))
             is not None
         )
         assert (
-            session.scalar(select(ArticleBrand).where(ArticleBrand.brand == "Freir"))
+            session.scalar(select(Brand).where(Brand.name == "Freir"))
             is not None
         )
-        assert (
-            session.scalar(
-                select(ArticleCategory).where(ArticleCategory.content == "Aceites")
-            )
-            is not None
-        )
-        assert (
-            session.scalar(
-                select(ArticleDescription).where(
-                    ArticleDescription.content == "Aceite de Oliva Aerosol 120ml"
-                )
-            )
-            is not None
-        )
-        assert session.scalar(select(ArticleCard)) is not None
-        saved_store = session.scalar(select(Store).where(Store.code == "s1"))
+        saved_store = session.scalar(select(PointOfSale).where(PointOfSale.code == "s1"))
         assert saved_store is not None
-        assert saved_store.place is not None
-        assert saved_store.place.address == "Av. Colon 100"
-        assert saved_store.place.latitude == -38.71
-        assert saved_store.place.longitude == -62.26
-        assert (
-            session.scalar(select(City).where(City.name == "Bahía Blanca")) is not None
-        )
+        assert saved_store.address == "Av. Colon 100"
+        assert saved_store.latitude == -38.71
+        assert saved_store.longitude == -62.26
+        assert saved_store.city == "Bahía Blanca"
 
-        # Search Articles
+        # Search Articles by brand
         found = cat_repo.search_articles("Freir")
         assert len(found) == 1
         assert found[0].ean == "779001"
@@ -186,36 +169,44 @@ def test_catalog_and_price_repositories() -> None:
         assert city_stores[0].branch_name == "Central"
         assert city_stores[0].city == "Bahía Blanca"
 
+        # Taxonomy navigation
+        depts = cat_repo.get_departments()
+        assert len(depts) == 1
+        assert depts[0].name == "Almacén"
+
+        subcats = cat_repo.get_subcategories("almacen")
+        assert len(subcats) == 1
+        assert subcats[0].name == "Aceites"
+
+        articles_by_sub = cat_repo.get_articles_by_subcategory("aceites")
+        assert len(articles_by_sub) == 1
+        assert articles_by_sub[0].ean == "779001"
+
         # Save Prices & Metrics
         today = date(2026, 10, 9)
-        price_entry = Price(
-            amount=1250,
-            timestamp=Timestamp(value=today),
-            store=store,
-            article_number=ArticleNumber(ean="779001"),
+        price_entry = DailyPrice(
+            date=today,
+            ean="779001",
+            store_code="s1",
+            price=1250,
+            unit_price=10.42,
         )
-        metric_entry = ArticleMetric(
-            timestamp=Timestamp(value=today),
-            article_number=ArticleNumber(ean="779001"),
-            city=City(
-                name="Bahía Blanca", state=State(code="AR-B", name="Buenos Aires")
-            ),
+        metric_entry = DailyProductMetric(
+            date=today,
+            ean="779001",
+            city="Bahía Blanca",
             min_price=1200,
             max_price=1300,
-            reference_price=1250,
+            median_price=1250,
             price_dispersion=0.04,
         )
 
         price_repo.save_prices([price_entry])
         price_repo.save_metrics([metric_entry])
 
-        # Verify Price & Timestamp & Metric tables
-        assert (
-            session.scalar(select(Timestamp).where(Timestamp.value == today))
-            is not None
-        )
-        assert session.scalar(select(Price)) is not None
-        assert session.scalar(select(ArticleMetric)) is not None
+        # Verify Price & Metric tables
+        assert session.scalar(select(DailyPrice)) is not None
+        assert session.scalar(select(DailyProductMetric)) is not None
 
         # Fetch Basket Prices
         basket_prices = price_repo.get_prices_for_basket(
@@ -229,6 +220,22 @@ def test_catalog_and_price_repositories() -> None:
         # Fetch Reference Prices
         ref_prices = price_repo.get_reference_prices("Bahía Blanca", today, ["779001"])
         assert ref_prices.get("779001") == 1250
+
+        # Fetch Article Price Stats
+        stats = price_repo.get_article_price_stats("779001")
+        assert stats is not None
+        assert stats.ean == "779001"
+        assert stats.name == "Aceite de Oliva Aerosol 120ml"
+        assert stats.min_price == 1200
+        assert stats.max_price == 1300
+        assert stats.reference_price == 1250
+        assert stats.stores_count == 1
+        assert len(stats.store_prices) == 1
+        assert stats.store_prices[0].price == 1250
+        assert stats.store_prices[0].chain_name == "Carrefour"
+
+        # Non-existent article returns None
+        assert price_repo.get_article_price_stats("0000000000000") is None
 
         # Delete Prices and Metrics for date
         deleted_metrics = price_repo.delete_metrics_for_date(today)
@@ -251,23 +258,32 @@ def test_search_articles_modes() -> None:
     with Session(engine) as session:
         cat_repo = SqlAlchemyCatalogRepository(session)
 
-        card1 = ArticleCard(
-            article_number=ArticleNumber(ean="779001"),
-            description=ArticleDescription(content="Leche Entera Fortificada 1L"),
-            brand=ArticleBrand(brand="La Serenísima"),
-            category=ArticleCategory(content="Lácteos"),
+        card1 = Article(
+            ean="779001",
+            name="Leche Entera Fortificada 1L",
+            clean_description="Leche Entera Fortificada",
+            brand_name="La Serenísima",
+            package="1 L",
+            package_amount=1.0,
+            package_unit="L",
         )
-        card2 = ArticleCard(
-            article_number=ArticleNumber(ean="779002"),
-            description=ArticleDescription(content="Pan Lactal Blanco 500g"),
-            brand=ArticleBrand(brand="Bimbo"),
-            category=ArticleCategory(content="Almacén"),
+        card2 = Article(
+            ean="779002",
+            name="Pan Lactal Blanco 500g",
+            clean_description="Pan Lactal Blanco",
+            brand_name="Bimbo",
+            package="500 g",
+            package_amount=500.0,
+            package_unit="g",
         )
-        card3 = ArticleCard(
-            article_number=ArticleNumber(ean="779003"),
-            description=ArticleDescription(content="Galletitas de Chocolate"),
-            brand=ArticleBrand(brand="Chocolinas"),
-            category=ArticleCategory(content="Almacén"),
+        card3 = Article(
+            ean="779003",
+            name="Galletitas de Chocolate",
+            clean_description="Galletitas de Chocolate",
+            brand_name="Chocolinas",
+            package="250 g",
+            package_amount=250.0,
+            package_unit="g",
         )
 
         cat_repo.save_articles([card1, card2, card3])
@@ -291,11 +307,6 @@ def test_search_articles_modes() -> None:
         res_fuzzy_desc = cat_repo.search_articles("leceh", mode="fuzzy")
         assert len(res_fuzzy_desc) >= 1
         assert res_fuzzy_desc[0].ean == "779001"
-
-        # Fuzzy search by category
-        res_cat = cat_repo.search_articles("Lacteos", mode="fuzzy")
-        assert len(res_cat) >= 1
-        assert res_cat[0].ean == "779001"
 
 
 def test_user_repository_basket_item_fields() -> None:

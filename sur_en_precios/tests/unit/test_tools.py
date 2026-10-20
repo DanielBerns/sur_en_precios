@@ -7,8 +7,8 @@ import pytest
 from sur_en_precios.config import read_config
 from sur_en_precios.tools.log_analyzer import analyze_log_file, run_log_analyzer
 from sur_en_precios.tools.run_etl import (
-    create_sample_sepa_data,
     find_latest_raw_date,
+    run_etl_pipeline,
 )
 
 
@@ -128,17 +128,29 @@ def test_run_etl_find_latest_raw_date(tmp_path: Path) -> None:
     assert latest == date(2026, 10, 5)
 
 
-def test_run_etl_create_sample_sepa_data(tmp_path: Path) -> None:
-    sample_dir = tmp_path / "sample"
-    create_sample_sepa_data(sample_dir)
+def test_run_etl_fails_fast_when_missing_raw_data(tmp_path: Path) -> None:
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    config_file = workdir / "config.yaml"
+    config_file.write_text(
+        "app:\n"
+        "  region: AR-B\n"
+        "scraper:\n"
+        "  raw_storage_dir: data/raw\n"
+        "etl:\n"
+        "  insert_batch_size: 100\n",
+        encoding="utf-8",
+    )
 
-    sucursales = sample_dir / "sucursales.csv"
-    productos = sample_dir / "productos.csv"
+    with pytest.raises(FileNotFoundError) as exc_info:
+        run_etl_pipeline(workdir_override=workdir, should_create_override=False)
 
-    assert sucursales.exists()
-    assert productos.exists()
-    assert "Carrefour Central" in sucursales.read_text(encoding="utf-8")
-    assert "Leche Entera 1L" in productos.read_text(encoding="utf-8")
+    assert "No harvested SEPA dataset found" in str(
+        exc_info.value
+    ) or "No SEPA raw dataset found" in str(exc_info.value)
+    assert not (workdir / "data" / "raw").exists() or not list(
+        (workdir / "data" / "raw").iterdir()
+    )
 
 
 def test_cli_parsers_strictly_restrict_arguments(

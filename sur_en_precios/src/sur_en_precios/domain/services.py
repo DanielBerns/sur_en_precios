@@ -10,6 +10,7 @@ import yaml
 from sur_en_precios.domain.models import (
     BasketOptimizationResult,
     ItemBestPrice,
+    ItemSubstitution,
     StoreBasketTotal,
     StoreItemPrice,
 )
@@ -26,6 +27,29 @@ from sur_en_precios.domain.models_public import (
 from sur_en_precios.domain.models_user import Basket, BasketItem
 
 logger = logging.getLogger("sur_en_precios.services")
+
+
+def calculate_unit_price(
+    price: int, pkg_amount: Optional[float], pkg_unit: Optional[str]
+) -> Tuple[Optional[float], Optional[str]]:
+    """Calculates normalized unit price (ARS per kg, liter or unit) and returns (unit_price, base_unit)."""
+    if not pkg_amount or pkg_amount <= 0 or not pkg_unit:
+        return None, None
+
+    unit = str(pkg_unit).lower().strip()
+    if unit in ("ml", "cc"):
+        base_amt = pkg_amount / 1000.0
+        return round(price / base_amt, 2), "L"
+    elif unit in ("g", "gr"):
+        base_amt = pkg_amount / 1000.0
+        return round(price / base_amt, 2), "kg"
+    elif unit in ("l", "lt"):
+        return round(price / pkg_amount, 2), "L"
+    elif unit in ("kg",):
+        return round(price / pkg_amount, 2), "kg"
+    elif unit in ("u", "un"):
+        return round(price / pkg_amount, 2), "u"
+    return None, None
 
 
 class PriceMetricsCalculator:
@@ -100,6 +124,8 @@ class BasketOptimizerService:
         stores: List[Store],
         prices: List[Price],
         reference_prices: Dict[str, int],
+        substitute_candidates_map: Optional[Dict[str, List[Any]]] = None,
+        substitute_prices: Optional[List[Price]] = None,
     ) -> BasketOptimizationResult:
         """Optimizes a shopping basket across city stores for a target date."""
         # Filter active (selected) items; None defaults to True
@@ -110,30 +136,55 @@ class BasketOptimizerService:
         ]
         total_requested_count = len(active_items)
 
+        # Combine prices with substitute_prices if present
+        all_prices_list = list(prices)
+        if substitute_prices:
+            all_prices_list.extend(substitute_prices)
+
         # Index prices: (store_identifier, ean) -> price
         price_lookup: Dict[Tuple[str, str], int] = {}
+        unit_price_lookup: Dict[Tuple[str, str], Tuple[Optional[float], Optional[str]]] = {}
+
         # Track city-wide min and max prices per product
         product_min_price: Dict[str, int] = {}
         product_max_price: Dict[str, int] = {}
 
-        for p in prices:
+        for p in all_prices_list:
             p_ean = str(getattr(p, "ean", "") or "")
             amt_val = getattr(p, "price", None)
             if amt_val is None:
                 amt_val = getattr(p, "amount", 0)
             amt: int = int(amt_val) if amt_val is not None else 0
 
+            # Determine unit price and unit
+            u_price = getattr(p, "unit_price", None)
+            base_unit: Optional[str] = None
+            prod = products_map.get(p_ean)
+            if prod:
+                calc_u_price, calc_base_unit = calculate_unit_price(
+                    amt,
+                    getattr(prod, "package_amount", None),
+                    getattr(prod, "package_unit", None),
+                )
+                if u_price is None:
+                    u_price = calc_u_price
+                base_unit = calc_base_unit
+
             s_id = getattr(p, "store_id", None)
             if s_id is not None:
                 price_lookup[(str(s_id), p_ean)] = amt
+                unit_price_lookup[(str(s_id), p_ean)] = (u_price, base_unit)
             s_code = getattr(p, "store_code", None)
             if s_code:
                 price_lookup[(str(s_code), p_ean)] = amt
+                unit_price_lookup[(str(s_code), p_ean)] = (u_price, base_unit)
             if hasattr(p, "store") and p.store:
                 if getattr(p.store, "code", None):
                     price_lookup[(str(p.store.code), p_ean)] = amt
+                    unit_price_lookup[(str(p.store.code), p_ean)] = (u_price, base_unit)
                 if getattr(p.store, "id", None) is not None:
                     price_lookup[(str(p.store.id), p_ean)] = amt
+                    unit_price_lookup[(str(p.store.id), p_ean)] = (u_price, base_unit)
 
             if p_ean not in product_min_price or amt < product_min_price[p_ean]:
                 product_min_price[p_ean] = amt
@@ -151,6 +202,15 @@ class BasketOptimizerService:
             if st_id is not None and (str(st_id), ean) in price_lookup:
                 return price_lookup[(str(st_id), ean)]
             return None
+
+        def get_store_unit_price(st: Any, ean: str) -> Tuple[Optional[float], Optional[str]]:
+            st_code = getattr(st, "code", None)
+            if st_code and (str(st_code), ean) in unit_price_lookup:
+                return unit_price_lookup[(str(st_code), ean)]
+            st_id = getattr(st, "id", None)
+            if st_id is not None and (str(st_id), ean) in unit_price_lookup:
+                return unit_price_lookup[(str(st_id), ean)]
+            return None, None
 
         # Evaluate each store
         for store in stores:
@@ -178,6 +238,7 @@ class BasketOptimizerService:
                     is_highest = item_price == product_max_price.get(ean)
                     ref_p = reference_prices.get(ean)
                     is_above_ref = (item_price > ref_p) if ref_p is not None else False
+                    u_price, base_unit = get_store_unit_price(store, ean)
 
                     store_item_prices[ean] = StoreItemPrice(
                         ean=ean,
@@ -185,6 +246,8 @@ class BasketOptimizerService:
                         is_lowest=is_lowest,
                         is_highest=is_highest,
                         is_above_reference=is_above_ref,
+                        unit_price=u_price,
+                        unit=base_unit,
                     )
 
             if matched_count > 0:
@@ -214,6 +277,8 @@ class BasketOptimizerService:
 
         # Compute item-by-item optimal (cheapest store per active item)
         item_by_item_optimal: List[ItemBestPrice] = []
+        suggested_substitutions: List[ItemSubstitution] = []
+        multi_store_total: int = 0
 
         for item in active_items:
             ean = item.ean
@@ -225,6 +290,8 @@ class BasketOptimizerService:
                 )
             cheapest_store: Optional[Store] = None
             cheapest_price: Optional[int] = None
+            cheapest_unit_price: Optional[float] = None
+            cheapest_base_unit: Optional[str] = None
 
             for store in stores:
                 price = get_store_price(store, ean)
@@ -232,13 +299,81 @@ class BasketOptimizerService:
                     if cheapest_price is None or price < cheapest_price:
                         cheapest_price = price
                         cheapest_store = store
+                        u_p, u_u = get_store_unit_price(store, ean)
+                        cheapest_unit_price = u_p
+                        cheapest_base_unit = u_u
+
+            # Check for candidate substitutions if available
+            best_sub: Optional[ItemSubstitution] = None
+            if substitute_candidates_map and ean in substitute_candidates_map and cheapest_price is not None:
+                candidates = substitute_candidates_map[ean]
+                for cand in candidates:
+                    cand_ean = getattr(cand, "ean", str(cand))
+                    cand_cheapest_store: Optional[Store] = None
+                    cand_cheapest_price: Optional[int] = None
+                    cand_unit_price: Optional[float] = None
+                    cand_base_unit: Optional[str] = None
+
+                    for store in stores:
+                        cp = get_store_price(store, cand_ean)
+                        if cp is not None:
+                            if cand_cheapest_price is None or cp < cand_cheapest_price:
+                                cand_cheapest_price = cp
+                                cand_cheapest_store = store
+                                cu_p, cu_u = get_store_unit_price(store, cand_ean)
+                                cand_unit_price = cu_p
+                                cand_base_unit = cu_u
+
+                    if cand_cheapest_store and cand_cheapest_price is not None:
+                        # Recommend if cheaper
+                        if cand_cheapest_price < cheapest_price:
+                            savings = cheapest_price - cand_cheapest_price
+                            savings_pct = round((savings / cheapest_price) * 100, 1)
+                            if best_sub is None or savings > best_sub.savings_amount:
+                                best_sub = ItemSubstitution(
+                                    original_ean=ean,
+                                    product=cand,
+                                    cheapest_store=cand_cheapest_store,
+                                    price=cand_cheapest_price,
+                                    unit_price=cand_unit_price,
+                                    unit=cand_base_unit,
+                                    savings_amount=savings,
+                                    savings_percent=savings_pct,
+                                )
+
+            if best_sub:
+                suggested_substitutions.append(best_sub)
 
             if cheapest_store is not None and cheapest_price is not None:
+                min_p = product_min_price.get(ean)
+                max_p = product_max_price.get(ean)
+                ref_p = reference_prices.get(ean)
+                dispersion = None
+                if min_p is not None and max_p is not None and min_p > 0:
+                    dispersion = round(((max_p - min_p) / min_p) * 100, 1)
+
+                num = getattr(item, "numerator", 1) or 1
+                den = getattr(item, "denominator", 1) or 1
+                if den == 0:
+                    den = 1
+                effective_price = round(cheapest_price * item.quantity * num / den)
+                multi_store_total += effective_price
+
                 item_by_item_optimal.append(
                     ItemBestPrice(
                         product=product,
                         cheapest_store=cheapest_store,
                         price=cheapest_price,
+                        unit_price=cheapest_unit_price,
+                        unit=cheapest_base_unit,
+                        substitution=best_sub,
+                        min_price=min_p,
+                        reference_price=ref_p,
+                        max_price=max_p,
+                        price_dispersion=dispersion,
+                        quantity=item.quantity,
+                        numerator=num,
+                        denominator=den,
                     )
                 )
 
@@ -251,6 +386,8 @@ class BasketOptimizerService:
             complete_stores=complete_stores,
             partial_stores=partial_stores,
             reference_prices=reference_prices,
+            suggested_substitutions=suggested_substitutions,
+            multi_store_total_price=multi_store_total,
         )
 
 

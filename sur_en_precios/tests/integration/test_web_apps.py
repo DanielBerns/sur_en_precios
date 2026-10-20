@@ -1,7 +1,20 @@
 import base64
 import io
+from datetime import date
 from pathlib import Path
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from sur_en_precios.domain.models_public import (
+    Article,
+    Category,
+    DailyPrice,
+    DailyProductMetric,
+    PointOfSale,
+    PublicBase,
+    Tag,
+)
 from sur_en_precios.web.control_app.app import create_control_app
 from sur_en_precios.web.public_app.app import create_public_app
 
@@ -80,6 +93,9 @@ def test_basket_editor_and_public_sharing(tmp_path: Path) -> None:
     assert "Nombre de la Canasta" in edit_html
     assert "Canasta Pública" in edit_html
     assert "Buscador de Artículos" in edit_html
+    assert "Agregar todos los artículos encontrados" in edit_html
+    assert "btn_add_all_found" in edit_html
+    assert "addAllFoundArticles" in edit_html
 
     # Extract basket_id
     basket_id = int(edit_url.split("/baskets/")[1].split("/edit")[0])
@@ -199,3 +215,301 @@ basket:
     res_delete = client.post(f"/baskets/{basket_id}/delete")
     assert res_delete.status_code == 302
     assert "/baskets" in res_delete.headers["Location"]
+
+
+def test_public_app_handles_legacy_user_db_migration(tmp_path: Path) -> None:
+    """Verifies that an older user_data.sqlite without 'selected' column is migrated without errors."""
+    import sqlite3
+
+    workdir = tmp_path / "legacy_workdir"
+    workdir.mkdir()
+    data_dir = workdir / "data"
+    data_dir.mkdir()
+
+    config_file = workdir / "config.yaml"
+    config_file.write_text(
+        "app:\n"
+        "  region: AR-B\n"
+        "database:\n"
+        "  public_db_filename: public.sqlite\n"
+        "  user_db_filename: user_data.sqlite\n",
+        encoding="utf-8",
+    )
+
+    user_db = data_dir / "user_data.sqlite"
+    conn = sqlite3.connect(str(user_db))
+    # Create legacy schema without selected, numerator, denominator columns
+    conn.executescript("""
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            created_at DATETIME
+        );
+        CREATE TABLE baskets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid VARCHAR(36) NOT NULL UNIQUE,
+            user_id INTEGER NOT NULL,
+            name VARCHAR(120) NOT NULL,
+            is_public BOOLEAN NOT NULL DEFAULT 0,
+            created_at DATETIME,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+        CREATE TABLE basket_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            basket_id INTEGER NOT NULL,
+            ean VARCHAR(32) NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY(basket_id) REFERENCES baskets(id)
+        );
+        INSERT INTO users (id, email, password_hash) VALUES (1, 'demo@surenprecios.ar', 'hashed');
+        INSERT INTO baskets (id, uuid, user_id, name, is_public) VALUES (1, 'test-uuid-1234', 1, 'Canasta Vieja', 0);
+        INSERT INTO basket_items (id, basket_id, ean, quantity) VALUES (1, 1, '779001', 2);
+    """)
+    conn.commit()
+    conn.close()
+
+    # Now create public app pointing to this workdir
+    app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    # GET /baskets must succeed without 'OperationalError: no such column: basket_items_1.selected'
+    res = client.get("/baskets")
+    assert res.status_code == 200
+    html = res.get_data(as_text=True)
+    assert "Canasta Vieja" in html
+
+    # Verify column 'selected' was automatically migrated
+    conn = sqlite3.connect(str(user_db))
+    cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(basket_items)").fetchall()
+    }
+    conn.close()
+    assert "selected" in cols
+    assert "numerator" in cols
+    assert "denominator" in cols
+
+
+def test_optimize_renders_complete_stores_without_formatting_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Verifies that rendering complete_stores with 100% badge does not crash with ValueError incomplete format."""
+    from datetime import date
+
+    from sur_en_precios.domain.models import BasketOptimizationResult, StoreBasketTotal
+    from sur_en_precios.domain.models_public import Branch, Flag, Store
+    from sur_en_precios.use_cases.optimize_basket import OptimizeBasketUseCase
+
+    workdir = tmp_path / "optimize_workdir"
+    app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    fake_store = Store(
+        code="c1", flag=Flag(flag="Carrefour"), branch=Branch(branch="Centro")
+    )
+    fake_total = StoreBasketTotal(
+        store=fake_store,
+        total_price=1500,
+        matched_items_count=1,
+        requested_items_count=1,
+        is_complete=True,
+    )
+    fake_result = BasketOptimizationResult(
+        city="Bahía Blanca",
+        calculation_date=date(2026, 10, 9),
+        requested_items=[],
+        best_single_store=fake_total,
+        item_by_item_optimal=[],
+        complete_stores=[fake_total],
+        partial_stores=[],
+        reference_prices={},
+    )
+
+    monkeypatch.setattr(
+        OptimizeBasketUseCase, "execute", lambda self, *args, **kwargs: fake_result
+    )
+
+    res = client.get("/optimize?city=Bahía+Blanca&date=2026-10-09&eans=779001")
+    assert res.status_code == 200
+    html = res.get_data(as_text=True)
+    assert "Disponibilidad 100%" in html
+    assert "Carrefour — Centro" in html
+
+
+def test_taxonomy_navigation_routes(tmp_path: Path) -> None:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sur_en_precios.domain.models_public import Article, Category, PublicBase, Tag
+
+    workdir = tmp_path / "taxonomy_workdir"
+    app = create_public_app(workdir=workdir)
+    client = app.test_client()
+
+    public_db_path = workdir / "data" / "public.sqlite"
+    public_db_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(f"sqlite:///{public_db_path}")
+    PublicBase.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        dept = Category(name="Almacén", slug="almacen", level=1)
+        session.add(dept)
+        session.flush()
+
+        sub = Category(name="Aceites", slug="aceites", level=2, parent_id=dept.id)
+        tag = Tag(name="sin-tacc", slug="sin-tacc")
+        session.add_all([sub, tag])
+        session.flush()
+
+        article = Article(
+            ean="779001",
+            name="Aceite de Girasol 900ml",
+            brand_name="Natura",
+            package="Botella 900ml",
+            package_amount=900.0,
+            package_unit="ml",
+            category_id=sub.id,
+        )
+        article.tags.append(tag)
+        session.add(article)
+        session.commit()
+
+    # 1. /departments
+    res_dept = client.get("/departments")
+    assert res_dept.status_code == 200
+    assert "Explorar por Categoría" in res_dept.get_data(as_text=True)
+    assert "Almacén" in res_dept.get_data(as_text=True)
+
+    # 2. /department/almacen
+    res_sub = client.get("/department/almacen")
+    assert res_sub.status_code == 200
+    assert "Aceites" in res_sub.get_data(as_text=True)
+
+    # 3. /subcategory/aceites
+    res_art = client.get("/subcategory/aceites")
+    assert res_art.status_code == 200
+    assert "Aceite de Girasol" in res_art.get_data(as_text=True)
+    assert "#sin-tacc" in res_art.get_data(as_text=True)
+
+    # 4. /tag/sin-tacc
+    res_tag = client.get("/tag/sin-tacc")
+    assert res_tag.status_code == 200
+    assert "Etiqueta #sin-tacc" in res_tag.get_data(as_text=True)
+    assert "Aceite de Girasol" in res_tag.get_data(as_text=True)
+
+
+def test_article_price_stats_and_detail_view(tmp_path: Path) -> None:
+    workdir = tmp_path / "stats_workdir"
+    data_dir = workdir / "data"
+    data_dir.mkdir(parents=True)
+
+    app = create_public_app(workdir=workdir)
+    client = app.test_client()
+
+    public_db_path = data_dir / "public.sqlite"
+    engine = create_engine(f"sqlite:///{public_db_path}")
+    PublicBase.metadata.create_all(engine)
+
+    today = date(2026, 10, 9)
+    with Session(engine) as session:
+        dept = Category(name="Almacén", slug="almacen", level=1)
+        session.add(dept)
+        session.flush()
+
+        sub = Category(name="Aceites", slug="aceites", level=2, parent_id=dept.id)
+        session.add(sub)
+        session.flush()
+
+        article = Article(
+            ean="779001",
+            name="Aceite de Oliva Extra 500ml",
+            clean_description="Aceite de Oliva Extra",
+            brand_name="Cocinero",
+            package="500 ml",
+            package_amount=500.0,
+            package_unit="ml",
+            category_id=sub.id,
+        )
+        pos = PointOfSale(
+            code="pos1",
+            brand_name="Carrefour",
+            branch_name="Sucursal 1",
+            city="Bahía Blanca",
+            province="Buenos Aires",
+            province_code="AR-B",
+        )
+        price = DailyPrice(
+            date=today,
+            ean="779001",
+            store_code="pos1",
+            price=1500,
+            unit_price=3.0,
+        )
+        metric = DailyProductMetric(
+            date=today,
+            ean="779001",
+            city="Bahía Blanca",
+            min_price=1400,
+            max_price=1600,
+            median_price=1500,
+            price_dispersion=0.065,
+        )
+        session.add_all([article, pos, price, metric])
+        session.commit()
+
+    # 1. Test search page results contain clickable EAN link and modal dialog
+    res_search = client.get("/?q=oliva")
+    assert res_search.status_code == 200
+    search_html = res_search.get_data(as_text=True)
+    assert "openPriceStatsModal(event, &#39;779001&#39;)" in search_html or "openPriceStatsModal(event, '779001')" in search_html
+    assert 'href="/article/779001"' in search_html
+    assert 'id="price_stats_dialog"' in search_html
+
+    # 2. Test category subcategory page contains clickable EAN link
+    res_subcat = client.get("/subcategory/aceites")
+    assert res_subcat.status_code == 200
+    subcat_html = res_subcat.get_data(as_text=True)
+    assert "openPriceStatsModal(event, &#39;779001&#39;)" in subcat_html or "openPriceStatsModal(event, '779001')" in subcat_html
+    assert 'href="/article/779001"' in subcat_html
+
+    # 3. Test API endpoint /api/articles/779001/price-stats
+    res_api = client.get("/api/articles/779001/price-stats")
+    assert res_api.status_code == 200
+    data = res_api.get_json()
+    assert data["ean"] == "779001"
+    assert data["name"] == "Aceite de Oliva Extra 500ml"
+    assert data["brand_name"] == "Cocinero"
+    assert data["min_price"] == 1400
+    assert data["max_price"] == 1600
+    assert data["reference_price"] == 1500
+    assert data["price_dispersion"] == 0.065
+    assert data["stores_count"] == 1
+    assert data["store_prices"][0]["chain_name"] == "Carrefour"
+    assert data["store_prices"][0]["price"] == 1500
+
+    # 4. Test API 404 for non-existent article
+    res_api_404 = client.get("/api/articles/000000/price-stats")
+    assert res_api_404.status_code == 404
+    assert "error" in res_api_404.get_json()
+
+    # 5. Test standalone article detail view /article/779001
+    res_detail = client.get("/article/779001")
+    assert res_detail.status_code == 200
+    detail_html = res_detail.get_data(as_text=True)
+    assert "Aceite de Oliva Extra 500ml" in detail_html
+    assert "Cocinero" in detail_html
+    assert "Precio Mínimo" in detail_html
+    assert "$1.400 ARS" in detail_html
+    assert "Precio de Referencia" in detail_html
+    assert "$1.500 ARS" in detail_html
+    assert "Precio Máximo" in detail_html
+    assert "$1.600 ARS" in detail_html
+    assert "Carrefour" in detail_html
+    assert "Sucursal 1" in detail_html
+
+    # 6. Test article detail view redirect for non-existent EAN
+    res_detail_404 = client.get("/article/000000")
+    assert res_detail_404.status_code == 302
+    assert res_detail_404.headers["Location"] == "/"
+
