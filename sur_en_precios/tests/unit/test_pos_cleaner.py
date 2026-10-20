@@ -1,6 +1,5 @@
 """Unit and integration tests for Point of Sale (POS) cleaner module."""
 
-from hermes_reborn.models import Base, PointOfSale
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +11,8 @@ from sur_en_precios.domain.cleaner.pos_cleaner import (
     resolve_corporate_info,
     resolve_geographic_info,
 )
+from sur_en_precios.domain.models_public import PointOfSale
+from sur_en_precios.domain.models_public import PublicBase as Base
 
 
 def test_decompose_pos_code_valid():

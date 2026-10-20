@@ -286,8 +286,8 @@ PythonAnywhere uses `pip` inside virtual environments. The production `requireme
 # Generated using uv:
 # uv export --no-dev --no-emit-project --no-hashes -o requirements.txt
 
-# In PythonAnywhere Bash Console:
-mkvirtualenv --python=python3.12 sur-en-precios-env
+# In PythonAnywhere Bash Console (Python 3.10):
+mkvirtualenv --python=python3.10 sur-en-precios-env
 pip install -r requirements.txt
 pip install -e ./sur_en_precios
 ```

@@ -3,7 +3,7 @@ name = "sur-en-precios"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.14.4",
     "bcrypt>=5.0.0",
@@ -14,7 +14,7 @@ dependencies = [
     "pydantic>=2.14.0",
     "python-json-logger>=4.2.0",
     "pyyaml>=6.0.3",
-    "sqlalchemy>=2.1.4",
+    "sqlalchemy>=2.0.36,<2.1.0",
 ]
 
 [dependency-groups]
