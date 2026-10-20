@@ -278,6 +278,36 @@ uv run python -m sur_en_precios.web.control_app.app
 Open browser at: `http://localhost:5001`  
 *(Default Credentials: `admin` / `sur_precios_2026`)*
 
+### 4. Deploying to PythonAnywhere (Virtualenv & `pip`)
+
+PythonAnywhere uses `pip` inside virtual environments. The production `requirements.txt` is exported directly via `uv`:
+
+```bash
+# Generated using uv:
+# uv export --no-dev --no-emit-project --no-hashes -o requirements.txt
+
+# In PythonAnywhere Bash Console:
+mkvirtualenv --python=python3.12 sur-en-precios-env
+pip install -r requirements.txt
+pip install -e ./sur_en_precios
+```
+
+In the PythonAnywhere **Web** tab:
+1. Set **Virtualenv** to: `/home/<your-username>/.virtualenvs/sur-en-precios-env`
+2. In the **WSGI configuration file** (`/var/www/<your-username>_pythonanywhere_com_wsgi.py`):
+
+```python
+import sys
+
+project_home = "/home/<your-username>/sur_en_precios/sur_en_precios/src"
+if project_home not in sys.path:
+    sys.path.insert(0, project_home)
+
+from sur_en_precios.web.public_app.app import create_app
+
+application = create_app()
+```
+
 ---
 
 ## 🛠️ CLI Tools Reference

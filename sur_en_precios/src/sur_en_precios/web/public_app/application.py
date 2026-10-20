@@ -119,9 +119,11 @@ def create_public_app(workdir: Path | None = None) -> Flask:
 
     return app
 
-def create_app():
-    public_app = create_public_app()
-    public_app.run(debug=False)
+
+def create_app() -> Flask:
+    """Factory returning the Flask WSGI application instance (e.g., for PythonAnywhere)."""
+    return create_public_app()
+
 
 def main():
     import sys
@@ -133,6 +135,7 @@ def main():
     except Exception as exc:
         logger.error("Public server error: %s", exc)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
