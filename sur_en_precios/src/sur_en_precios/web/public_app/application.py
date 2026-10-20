@@ -119,8 +119,11 @@ def create_public_app(workdir: Path | None = None) -> Flask:
 
     return app
 
+def create_app():
+    public_app = create_public_app()
+    public_app.run(debug=False)
 
-if __name__ == "__main__":
+def main():
     import sys
 
     try:
@@ -130,3 +133,6 @@ if __name__ == "__main__":
     except Exception as exc:
         logger.error("Public server error: %s", exc)
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()
