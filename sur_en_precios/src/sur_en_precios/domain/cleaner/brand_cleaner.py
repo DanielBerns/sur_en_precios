@@ -12,7 +12,6 @@ from sur_en_precios.domain.cleaner.text_utils import (
     title_case_spanish,
 )
 
-
 # Known generic/unbranded strings in retail databases
 UNBRANDED_TERMS = {
     "sin marca",

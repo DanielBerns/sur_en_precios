@@ -5,16 +5,16 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
-
-
-
-from sur_en_precios.domain.cleaner.text_utils import clean_whitespace, slugify, title_case_spanish
+from sur_en_precios.domain.cleaner.text_utils import (
+    slugify,
+)
+from sur_en_precios.domain.models import ArticlePriceStats, StorePriceDetail
 from sur_en_precios.domain.models_public import (
     Article,
     Brand,
@@ -23,9 +23,7 @@ from sur_en_precios.domain.models_public import (
     DailyProductMetric,
     PointOfSale,
     Tag,
-    article_tags,
 )
-from sur_en_precios.domain.models import ArticlePriceStats, StorePriceDetail
 from sur_en_precios.domain.models_user import (
     Basket,
     BasketItem,
@@ -142,7 +140,9 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             return
 
         # 1. Ensure Brands exist and resolve brand_map
-        brand_names = {b.strip() for a in articles if (b := _get_brand_str(a)) and b.strip()}
+        brand_names = {
+            b.strip() for a in articles if (b := _get_brand_str(a)) and b.strip()
+        }
         brand_map: Dict[str, Optional[int]] = {}
         if brand_names:
             existing_brands = self._session.execute(select(Brand)).scalars().all()
@@ -183,8 +183,12 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 continue
             desc = _get_description_str(a)
             name = getattr(a, "name", None) or desc
-            b_name = _get_brand_str(a)
-            b_id = brand_map.get(b_name) if b_name else getattr(a, "brand_id", None)
+            brand_name = _get_brand_str(a)
+            b_id = (
+                brand_map.get(brand_name)
+                if brand_name
+                else getattr(a, "brand_id", None)
+            )
             pkg = getattr(a, "package", None)
             pkg_amt = getattr(a, "package_amount", None)
             pkg_unit = getattr(a, "package_unit", None)
@@ -197,12 +201,14 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                     "clean_description": desc,
                     "raw_description": getattr(a, "raw_description", desc),
                     "brand_id": b_id,
-                    "brand_name": b_name,
+                    "brand_name": brand_name,
                     "package": pkg,
                     "package_amount": pkg_amt,
                     "package_unit": pkg_unit,
                     "category_id": cat_id,
-                    "is_reviewed": True if getattr(a, "is_reviewed", None) is None else bool(getattr(a, "is_reviewed")),
+                    "is_reviewed": True
+                    if getattr(a, "is_reviewed", None) is None
+                    else bool(getattr(a, "is_reviewed")),
                 }
             )
 
@@ -237,9 +243,21 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 continue
 
             place_ref = getattr(s, "place", None)
-            addr = getattr(place_ref, "address", None) if place_ref else getattr(s, "address", None)
-            lat = getattr(place_ref, "latitude", None) if place_ref else getattr(s, "latitude", None)
-            lon = getattr(place_ref, "longitude", None) if place_ref else getattr(s, "longitude", None)
+            addr = (
+                getattr(place_ref, "address", None)
+                if place_ref
+                else getattr(s, "address", None)
+            )
+            lat = (
+                getattr(place_ref, "latitude", None)
+                if place_ref
+                else getattr(s, "latitude", None)
+            )
+            lon = (
+                getattr(place_ref, "longitude", None)
+                if place_ref
+                else getattr(s, "longitude", None)
+            )
 
             rows.append(
                 {
@@ -248,7 +266,8 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                     "comercio_id": getattr(s, "comercio_id", None),
                     "bandera_id": getattr(s, "bandera_id", None),
                     "sucursal_id": getattr(s, "sucursal_id", None),
-                    "business_name": getattr(s, "business_name", None) or _get_chain_name(s),
+                    "business_name": getattr(s, "business_name", None)
+                    or _get_chain_name(s),
                     "holding_group": getattr(s, "holding_group", None),
                     "brand_name": _get_chain_name(s),
                     "store_format": getattr(s, "store_format", None),
@@ -273,46 +292,70 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
 
         self._session.commit()
 
-    def search_articles(
-        self, query: str, limit: int = 50, mode: str = "fuzzy"
-    ) -> List[Article]:
+    def search_articles_paginated(
+        self,
+        query: str,
+        page: int = 1,
+        per_page: int = 20,
+        mode: str = "fuzzy",
+    ) -> Tuple[List[Article], int]:
         try:
             q = (query or "").strip()
             if not q:
-                return []
+                return [], 0
 
-            base_stmt = (
-                select(Article)
-                .options(
-                    joinedload(Article.brand),
-                    joinedload(Article.category),
-                    selectinload(Article.tags),
-                )
+            page = max(1, page)
+            per_page = max(1, per_page)
+
+            base_stmt = select(Article).options(
+                joinedload(Article.brand),
+                joinedload(Article.category),
+                selectinload(Article.tags),
             )
 
             # 1. Exact / Direct EAN search if numeric
             if q.isdigit() and len(q) >= 6:
-                ean_res = self._session.execute(
-                    base_stmt.where(Article.ean == q).limit(limit)
-                ).scalars().unique().all()
+                ean_res = (
+                    self._session.execute(base_stmt.where(Article.ean == q))
+                    .scalars()
+                    .unique()
+                    .all()
+                )
                 if ean_res:
-                    return list(ean_res)
+                    total = len(ean_res)
+                    start = (page - 1) * per_page
+                    return list(ean_res[start : start + per_page]), total
 
             if mode == "exact":
                 pattern = f"%{q}%"
-                stmt = base_stmt.where(
+                filter_cond = (
                     (Article.name.ilike(pattern))
                     | (Article.clean_description.ilike(pattern))
                     | (Article.brand_name.ilike(pattern))
                     | (Article.ean == q)
-                ).limit(limit)
-                return list(self._session.execute(stmt).scalars().unique().all())
+                )
+                count_stmt = select(func.count(Article.id)).where(filter_cond)
+                total = self._session.execute(count_stmt).scalar() or 0
+
+                offset = (page - 1) * per_page
+                stmt = (
+                    base_stmt.where(filter_cond)
+                    .order_by(Article.name)
+                    .offset(offset)
+                    .limit(per_page)
+                )
+                items = list(self._session.execute(stmt).scalars().unique().all())
+                return items, total
 
             # Fuzzy / Approximate Token Matching
             candidates_map: Dict[str, Article] = {}
 
             # Exact EAN check
-            for a in self._session.execute(base_stmt.where(Article.ean == q).limit(limit)).scalars().unique():
+            for a in (
+                self._session.execute(base_stmt.where(Article.ean == q))
+                .scalars()
+                .unique()
+            ):
                 candidates_map[a.ean] = a
 
             tokens = [t.lower() for t in q.split() if t]
@@ -328,29 +371,31 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 )
 
             if conditions:
-                token_stmt = base_stmt.where(or_(*conditions)).limit(limit * 3)
+                token_stmt = base_stmt.where(or_(*conditions)).limit(2500)
                 for a in self._session.execute(token_stmt).scalars().unique():
                     candidates_map[a.ean] = a
 
             # Fallback if few candidates: check brands
-            if len(candidates_map) < limit:
+            if len(candidates_map) < 50:
                 all_brands = self._session.execute(select(Brand)).scalars().all()
                 matched_brand_names = [
                     b.name
                     for b in all_brands
-                    if any(fuzzy_similarity_ratio(tok, b.name) >= 0.75 for tok in tokens)
+                    if any(
+                        fuzzy_similarity_ratio(tok, b.name) >= 0.75 for tok in tokens
+                    )
                     or fuzzy_similarity_ratio(q, b.name) >= 0.75
                 ]
                 if matched_brand_names:
                     brand_stmt = base_stmt.where(
                         Article.brand_name.in_(matched_brand_names[:20])
-                    ).limit(limit * 2)
+                    ).limit(500)
                     for a in self._session.execute(brand_stmt).scalars().unique():
                         candidates_map[a.ean] = a
 
             # If still few candidates, test small sample
-            if len(candidates_map) < limit:
-                sample_stmt = base_stmt.limit(100)
+            if len(candidates_map) < 50:
+                sample_stmt = base_stmt.limit(200)
                 for a in self._session.execute(sample_stmt).scalars().unique():
                     candidates_map[a.ean] = a
 
@@ -390,15 +435,26 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                     scored.append((score, a))
 
             scored.sort(key=lambda pair: pair[0], reverse=True)
-            return [a for _, a in scored[:limit]]
+            total = len(scored)
+            start = (page - 1) * per_page
+            return [a for _, a in scored[start : start + per_page]], total
         except Exception as exc:
             logger.error(
-                "Error executing search_articles (query=%r, mode=%s): %s",
+                "Error executing search_articles_paginated (query=%r, mode=%s, page=%s): %s",
                 query,
                 mode,
+                page,
                 exc,
             )
             raise
+
+    def search_articles(
+        self, query: str, limit: int = 50, mode: str = "fuzzy"
+    ) -> List[Article]:
+        items, _ = self.search_articles_paginated(
+            query=query, page=1, per_page=limit, mode=mode
+        )
+        return items
 
     def get_article_by_ean(self, ean: str) -> Optional[Article]:
         stmt = (
@@ -434,7 +490,9 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 .distinct()
                 .order_by(PointOfSale.city)
             )
-            cities = list(self._session.execute(stmt_with_prices).scalars().all())
+            cities = [
+                c for c in self._session.execute(stmt_with_prices).scalars().all() if c
+            ]
             if cities:
                 return cities
 
@@ -450,7 +508,7 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 .distinct()
                 .order_by(PointOfSale.city)
             )
-            cities = list(self._session.execute(stmt_pos).scalars().all())
+            cities = [c for c in self._session.execute(stmt_pos).scalars().all() if c]
             if cities:
                 return cities
 
@@ -461,7 +519,7 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             .distinct()
             .order_by(PointOfSale.city)
         )
-        return list(self._session.execute(stmt_all).scalars().all())
+        return [c for c in self._session.execute(stmt_all).scalars().all() if c]
 
     # Taxonomy navigation methods
     def get_departments(self) -> List[Category]:
@@ -483,39 +541,79 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
         )
         return list(self._session.execute(stmt).scalars().all())
 
-    def get_articles_by_subcategory(
-        self, subcategory_slug: str, limit: int = 50
-    ) -> List[Article]:
+    def get_articles_by_subcategory_paginated(
+        self, subcategory_slug: str, page: int = 1, per_page: int = 50
+    ) -> Tuple[List[Article], int]:
+        page = max(1, page)
+        per_page = max(1, per_page)
+        filter_cond = Category.slug == subcategory_slug
+
+        count_stmt = (
+            select(func.count(Article.id))
+            .join(Category, Article.category_id == Category.id)
+            .where(filter_cond)
+        )
+        total = self._session.execute(count_stmt).scalar() or 0
+
+        offset = (page - 1) * per_page
         stmt = (
             select(Article)
             .join(Category, Article.category_id == Category.id)
-            .where(Category.slug == subcategory_slug)
+            .where(filter_cond)
             .options(
                 joinedload(Article.brand),
                 joinedload(Article.category),
                 selectinload(Article.tags),
             )
-            .limit(limit)
+            .order_by(Article.name)
+            .offset(offset)
+            .limit(per_page)
         )
-        return list(self._session.execute(stmt).scalars().unique().all())
+        items = list(self._session.execute(stmt).scalars().unique().all())
+        return items, total
 
-    def get_articles_by_tag(self, tag_name: str, limit: int = 50) -> List[Article]:
+    def get_articles_by_subcategory(
+        self, subcategory_slug: str, limit: int = 50
+    ) -> List[Article]:
+        items, _ = self.get_articles_by_subcategory_paginated(
+            subcategory_slug, page=1, per_page=limit
+        )
+        return items
+
+    def get_articles_by_tag_paginated(
+        self, tag_name: str, page: int = 1, per_page: int = 50
+    ) -> Tuple[List[Article], int]:
+        page = max(1, page)
+        per_page = max(1, per_page)
+        filter_cond = Tag.name == tag_name
+
+        count_stmt = (
+            select(func.count(Article.id)).join(Article.tags).where(filter_cond)
+        )
+        total = self._session.execute(count_stmt).scalar() or 0
+
+        offset = (page - 1) * per_page
         stmt = (
             select(Article)
             .join(Article.tags)
-            .where(Tag.name == tag_name)
+            .where(filter_cond)
             .options(
                 joinedload(Article.brand),
                 joinedload(Article.category),
                 selectinload(Article.tags),
             )
-            .limit(limit)
+            .order_by(Article.name)
+            .offset(offset)
+            .limit(per_page)
         )
-        return list(self._session.execute(stmt).scalars().unique().all())
+        items = list(self._session.execute(stmt).scalars().unique().all())
+        return items, total
 
-    def get_candidate_substitutions(
-        self, ean: str, limit: int = 5
-    ) -> List[Article]:
+    def get_articles_by_tag(self, tag_name: str, limit: int = 50) -> List[Article]:
+        items, _ = self.get_articles_by_tag_paginated(tag_name, page=1, per_page=limit)
+        return items
+
+    def get_candidate_substitutions(self, ean: str, limit: int = 5) -> List[Article]:
         current = self.get_article_by_ean(ean)
         if not current or not current.category_id:
             return []
@@ -536,7 +634,6 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             stmt = stmt.where(Article.package_unit == current.package_unit)
         stmt = stmt.limit(limit)
         return list(self._session.execute(stmt).scalars().unique().all())
-
 
 
 class SqlAlchemyPriceRepository(PriceRepositoryPort):
@@ -568,7 +665,9 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
                 if st_ref is not None
                 else (getattr(p, "store_code", None) or getattr(p, "store_id", None))
             )
-            amt = getattr(p, "amount", None) or getattr(p, "price", 0)
+            amt = getattr(p, "amount", None)
+            if amt is None:
+                amt = getattr(p, "price", 0)
 
             if raw_d and ean and store_code:
                 rows.append(
@@ -576,7 +675,7 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
                         "date": raw_d,
                         "ean": str(ean),
                         "store_code": str(store_code),
-                        "price": int(amt),
+                        "price": int(amt) if amt is not None else 0,
                         "unit_price": getattr(p, "unit_price", None),
                     }
                 )
@@ -700,13 +799,12 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         ref_dict: Dict[str, int] = {}
         for i in range(0, len(eans), CHUNK_SIZE):
             chunk_eans = eans[i : i + CHUNK_SIZE]
-            stmt = (
-                select(DailyProductMetric.ean, DailyProductMetric.median_price)
-                .where(
-                    func.lower(DailyProductMetric.city) == func.lower(city.strip()),
-                    DailyProductMetric.date == price_date,
-                    DailyProductMetric.ean.in_(chunk_eans),
-                )
+            stmt = select(
+                DailyProductMetric.ean, DailyProductMetric.median_price
+            ).where(
+                func.lower(DailyProductMetric.city) == func.lower(city.strip()),
+                DailyProductMetric.date == price_date,
+                DailyProductMetric.ean.in_(chunk_eans),
             )
             for ean_val, med_p in self._session.execute(stmt).all():
                 if med_p is not None:
@@ -850,11 +948,14 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
             if max_p is None or max_p < max(observed_prices):
                 max_p = max(observed_prices)
             if ref_p is None:
-                ref_p = PriceMetricsCalculator.calculate_reference_price(observed_prices)
+                ref_p = PriceMetricsCalculator.calculate_reference_price(
+                    observed_prices
+                )
             if dispersion is None and len(observed_prices) > 1:
                 mean_val = sum(observed_prices) / len(observed_prices)
                 if mean_val > 0:
                     import statistics
+
                     dispersion = round(statistics.stdev(observed_prices) / mean_val, 4)
 
         cheapest_store = (
@@ -869,7 +970,9 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         )
 
         resolved_city = city or (
-            store_details[0].city if store_details else (metrics[0].city if metrics else None)
+            store_details[0].city
+            if store_details
+            else (metrics[0].city if metrics else None)
         )
 
         return ArticlePriceStats(
@@ -898,24 +1001,91 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
     def __init__(self, session: Session):
         self._session = session
 
-    def create_user(self, email: str, password_hash: str) -> User:
+    def create_user(
+        self,
+        username: str = "",
+        password_hash: str = "",
+        is_admin: bool = False,
+        email: Optional[str] = None,
+    ) -> User:
+        effective_username = (username or email or "").strip().lower()
+        if not effective_username:
+            raise ValueError("Username cannot be empty")
+
+        if is_admin:
+            existing_admins = self.count_admins()
+            if existing_admins >= 1:
+                raise ValueError(
+                    "Solo se permite un único usuario administrador en el sistema."
+                )
+
         try:
-            user_entity = User(email=email, password_hash=password_hash)
+            user_entity = User(
+                username=effective_username,
+                password_hash=password_hash,
+                is_admin=is_admin,
+            )
             self._session.add(user_entity)
             self._session.commit()
             self._session.refresh(user_entity)
             return user_entity
         except Exception as exc:
             self._session.rollback()
-            logger.error("Failed to create user with email %s: %s", email, exc)
+            logger.error(
+                "Failed to create user with username %s: %s", effective_username, exc
+            )
+            raise
+
+    def get_user_by_username(self, username: str) -> Optional[User]:
+        try:
+            clean_name = username.strip().lower()
+            stmt = select(User).where(User.username == clean_name)
+            return self._session.execute(stmt).scalar_one_or_none()
+        except Exception as exc:
+            logger.error("Failed to query user by username %s: %s", username, exc)
             raise
 
     def get_user_by_email(self, email: str) -> Optional[User]:
+        return self.get_user_by_username(email)
+
+    def get_user_by_id(self, user_id: int) -> Optional[User]:
         try:
-            stmt = select(User).where(User.email == email)
+            stmt = select(User).where(User.id == user_id)
             return self._session.execute(stmt).scalar_one_or_none()
         except Exception as exc:
-            logger.error("Failed to query user by email %s: %s", email, exc)
+            logger.error("Failed to query user by id %s: %s", user_id, exc)
+            raise
+
+    def get_all_users(self) -> List[User]:
+        try:
+            stmt = (
+                select(User).options(joinedload(User.baskets)).order_by(User.id.asc())
+            )
+            return list(self._session.execute(stmt).scalars().unique().all())
+        except Exception as exc:
+            logger.error("Failed to query all users: %s", exc)
+            raise
+
+    def delete_user(self, user_id: int) -> bool:
+        try:
+            stmt = select(User).where(User.id == user_id)
+            user = self._session.execute(stmt).scalar_one_or_none()
+            if not user:
+                return False
+            self._session.delete(user)
+            self._session.commit()
+            return True
+        except Exception as exc:
+            self._session.rollback()
+            logger.error("Failed to delete user %s: %s", user_id, exc)
+            raise
+
+    def count_admins(self) -> int:
+        try:
+            stmt = select(func.count(User.id)).where(User.is_admin.is_(True))
+            return int(self._session.execute(stmt).scalar() or 0)
+        except Exception as exc:
+            logger.error("Failed to count admin users: %s", exc)
             raise
 
     def save_basket(self, basket: Basket) -> Basket:
@@ -964,6 +1134,7 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
                 select(Basket)
                 .options(joinedload(Basket.items))
                 .where(Basket.user_id == user_id)
+                .order_by(Basket.id.desc())
             )
             results = self._session.execute(stmt).scalars().unique().all()
             return list(results)
@@ -975,11 +1146,24 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
             )
             raise
 
+    def get_all_baskets(self) -> List[Basket]:
+        try:
+            stmt = (
+                select(Basket)
+                .options(joinedload(Basket.items), joinedload(Basket.user))
+                .order_by(Basket.id.desc())
+            )
+            results = self._session.execute(stmt).scalars().unique().all()
+            return list(results)
+        except Exception as exc:
+            logger.error("Failed to fetch all baskets: %s", exc)
+            raise
+
     def get_basket_by_uuid(self, uuid_str: str) -> Optional[Basket]:
         try:
             stmt = (
                 select(Basket)
-                .options(joinedload(Basket.items))
+                .options(joinedload(Basket.items), joinedload(Basket.user))
                 .where(Basket.uuid == uuid_str)
             )
             return self._session.execute(stmt).scalars().first()

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Inspección de Canasta — Administración{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <a href="{{ url_for('admin.all_baskets') }}" style="color: var(--accent); font-size: 0.85rem; text-decoration: none;">&larr; Volver a la lista de canastas</a>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-top: 0.5rem; border-bottom: 1px solid #3a506b; padding-bottom: 1rem;">
+        <div>
+            <h2 style="color: var(--accent); margin: 0;">{{ basket.name }}</h2>
+            <div style="color: #a0aec0; font-size: 0.9rem; margin-top: 0.35rem;">
+                <span>Propietario: <strong style="color: var(--text);">{{ basket.user.username if basket.user else 'Desconocido' }}</strong></span>
+                <span style="margin: 0 0.5rem;">|</span>
+                <span>UUID: <code>{{ basket.uuid }}</code></span>
+                <span style="margin: 0 0.5rem;">|</span>
+                {% if basket.is_public %}
+                    <span class="badge badge-public">Pública</span>
+                {% else %}
+                    <span class="badge badge-private">Privada</span>
+                {% endif %}
+            </div>
+        </div>
+        <div>
+            <a href="{{ url_for('optimize.optimize', list_id=basket.id) }}" class="btn btn-success">
+                Optimizar Precios &rarr;
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="padding: 0; overflow-x: auto;">
+    <table style="margin-top: 0;">
+        <thead>
+            <tr>
+                <th style="padding-left: 1.5rem;">Código EAN</th>
+                <th>Producto</th>
+                <th>Marca</th>
+                <th>Categoría</th>
+                <th style="text-align: center;">Cantidad</th>
+                <th style="text-align: center; padding-right: 1.5rem;">Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in items_data %}
+            {% set it = row.item %}
+            {% set art = row.article %}
+            <tr>
+                <td style="padding-left: 1.5rem;">
+                    <a href="javascript:void(0)" class="ean-link" onclick="openPriceStatsModal('{{ it.ean }}')">
+                        <code>{{ it.ean }}</code>
+                    </a>
+                </td>
+                <td>
+                    <strong>{{ art.name if art else (art.clean_description if art else 'Artículo no encontrado') }}</strong>
+                    {% if art and art.package %}
+                        <small style="color: #a0aec0; display: block;">Envase: {{ art.package }}</small>
+                    {% endif %}
+                </td>
+                <td style="color: #a0aec0;">
+                    {{ art.brand_name if art and art.brand_name else '-' }}
+                </td>
+                <td style="color: #a0aec0; font-size: 0.85rem;">
+                    {{ art.category_name if art and art.category_name else '-' }}
+                </td>
+                <td style="text-align: center; font-weight: bold;">
+                    {{ it.quantity }}
+                </td>
+                <td style="text-align: center; padding-right: 1.5rem;">
+                    {% if it.selected %}
+                        <span class="badge badge-lowest">Seleccionado</span>
+                    {% else %}
+                        <span class="badge" style="background: rgba(255,255,255,0.08); color: #a0aec0;">Omitido</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align: center; padding: 2rem; color: #a0aec0;">
+                    Esta canasta no contiene artículos.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

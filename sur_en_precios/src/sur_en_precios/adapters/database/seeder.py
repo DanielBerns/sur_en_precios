@@ -5,16 +5,16 @@ from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 
 from sur_en_precios.domain.models_public import PublicBase
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_HERMES_DB_PATH = Path("/home/dberns/Projects/github/DanielBerns/hermes_reborn/hermes_clean.db")
+DEFAULT_HERMES_DB_PATH = Path(
+    "/home/dberns/Projects/github/DanielBerns/hermes_reborn/hermes_clean.db"
+)
 
 
 def seed_master_catalog(
@@ -66,7 +66,9 @@ def seed_master_catalog(
             SELECT id, name, slug, level, description, parent_id FROM hermes.categories
             """
         )
-        counts["categories"] = cur.execute("SELECT count(*) FROM categories").fetchone()[0]
+        counts["categories"] = cur.execute(
+            "SELECT count(*) FROM categories"
+        ).fetchone()[0]
 
         # 2. brands
         cur.execute(
@@ -110,7 +112,9 @@ def seed_master_catalog(
             SELECT article_id, tag_id FROM hermes.article_tags
             """
         )
-        counts["article_tags"] = cur.execute("SELECT count(*) FROM article_tags").fetchone()[0]
+        counts["article_tags"] = cur.execute(
+            "SELECT count(*) FROM article_tags"
+        ).fetchone()[0]
 
         # 6. points_of_sale
         cur.execute(
@@ -129,7 +133,9 @@ def seed_master_catalog(
             FROM hermes.points_of_sale
             """
         )
-        counts["points_of_sale"] = cur.execute("SELECT count(*) FROM points_of_sale").fetchone()[0]
+        counts["points_of_sale"] = cur.execute(
+            "SELECT count(*) FROM points_of_sale"
+        ).fetchone()[0]
 
         con.commit()
         cur.execute("DETACH DATABASE hermes")

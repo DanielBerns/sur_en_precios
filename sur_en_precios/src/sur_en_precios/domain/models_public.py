@@ -40,7 +40,9 @@ class PublicBase(DeclarativeBase):
 article_tags = Table(
     "article_tags",
     PublicBase.metadata,
-    Column("article_id", ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "article_id", ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True
+    ),
     Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
     Index("ix_article_tags_article_id", "article_id"),
     Index("ix_article_tags_tag_id", "tag_id"),
@@ -58,7 +60,9 @@ class Category(PublicBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(
+        String(120), unique=True, nullable=False, index=True
+    )
     level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
@@ -92,6 +96,7 @@ class Category(PublicBase):
             kwargs["name"] = kwargs.pop("content")
         if "name" in kwargs and "slug" not in kwargs:
             from sur_en_precios.domain.cleaner.text_utils import slugify
+
             kwargs["slug"] = slugify(kwargs["name"])
         super().__init__(**kwargs)
 
@@ -116,8 +121,12 @@ class Brand(PublicBase):
     __tablename__ = "brands"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
-    slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
+    slug: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
 
     articles: Mapped[List[Article]] = relationship(
         "Article",
@@ -130,6 +139,7 @@ class Brand(PublicBase):
             kwargs["name"] = kwargs.pop("brand")
         if "name" in kwargs and "slug" not in kwargs:
             from sur_en_precios.domain.cleaner.text_utils import slugify
+
             kwargs["slug"] = slugify(kwargs["name"])
         super().__init__(**kwargs)
 
@@ -141,15 +151,18 @@ class Brand(PublicBase):
         return f"<Brand(id={self.id}, name='{self.name}')>"
 
 
-
 class Tag(PublicBase):
     """Keyword / facet tag for fine-grained querying (e.g. 'malbec', 'sin gas', 'doypack')."""
 
     __tablename__ = "tags"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
-    slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
+    slug: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
 
     articles: Mapped[List[Article]] = relationship(
         "Article",
@@ -168,9 +181,13 @@ class Article(PublicBase):
     __tablename__ = "articles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ean: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    ean: Mapped[str] = mapped_column(
+        String(32), unique=True, nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    clean_description: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    clean_description: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )
     raw_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Brand details
@@ -179,12 +196,16 @@ class Article(PublicBase):
         nullable=True,
         index=True,
     )
-    brand_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    brand_name: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, index=True
+    )
 
     # Package details
     package: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     package_amount: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    package_unit: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
+    package_unit: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, index=True
+    )
 
     # Category association
     category_id: Mapped[Optional[int]] = mapped_column(
@@ -198,7 +219,9 @@ class Article(PublicBase):
 
     # Relationships
     brand: Mapped[Optional[Brand]] = relationship("Brand", back_populates="articles")
-    category: Mapped[Optional[Category]] = relationship("Category", back_populates="articles")
+    category: Mapped[Optional[Category]] = relationship(
+        "Category", back_populates="articles"
+    )
     tags: Mapped[List[Tag]] = relationship(
         "Tag",
         secondary=article_tags,
@@ -222,7 +245,9 @@ class Article(PublicBase):
             kwargs["ean"] = getattr(an, "ean", str(an))
         if "description" in kwargs and "clean_description" not in kwargs:
             d = kwargs.pop("description")
-            kwargs["clean_description"] = getattr(d, "content", getattr(d, "clean_description", str(d)))
+            kwargs["clean_description"] = getattr(
+                d, "content", getattr(d, "clean_description", str(d))
+            )
             if "name" not in kwargs:
                 kwargs["name"] = kwargs["clean_description"]
         if "name" in kwargs and "clean_description" not in kwargs:
@@ -240,7 +265,6 @@ class Article(PublicBase):
                 kwargs["category_id"] = getattr(c, "id", None)
         kwargs.setdefault("is_reviewed", True)
         super().__init__(**kwargs)
-
 
     @property
     def description(self) -> str:
@@ -265,24 +289,46 @@ class PointOfSale(PublicBase):
     __tablename__ = "points_of_sale"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    sepa_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
-    comercio_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
-    bandera_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
-    sucursal_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    code: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    sepa_id: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    comercio_id: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    bandera_id: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    sucursal_id: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, index=True
+    )
 
     # Corporate & Brand hierarchy
-    business_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
-    holding_group: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    brand_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    store_format: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    business_name: Mapped[Optional[str]] = mapped_column(
+        String(120), nullable=True, index=True
+    )
+    holding_group: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, index=True
+    )
+    brand_name: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, index=True
+    )
+    store_format: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, index=True
+    )
 
     # Location details
     branch_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     address: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    province: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    province_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, index=True)
+    province: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, index=True
+    )
+    province_code: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True, index=True
+    )
 
     # Geolocation (optional coordinates)
     latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -310,7 +356,9 @@ class PointOfSale(PublicBase):
                 kwargs["longitude"] = getattr(p, "longitude", None)
         if "business" in kwargs and "business_name" not in kwargs:
             bu = kwargs.pop("business")
-            kwargs["business_name"] = getattr(bu, "business", getattr(bu, "name", str(bu)))
+            kwargs["business_name"] = getattr(
+                bu, "business", getattr(bu, "name", str(bu))
+            )
         if "flag" in kwargs and "brand_name" not in kwargs:
             fl = kwargs.pop("flag")
             kwargs["brand_name"] = getattr(fl, "flag", getattr(fl, "brand", str(fl)))
@@ -392,7 +440,9 @@ class DailyPrice(PublicBase):
 
     __tablename__ = "daily_prices"
 
-    date: Mapped[dt.date] = mapped_column(Date, primary_key=True, nullable=False, index=True)
+    date: Mapped[dt.date] = mapped_column(
+        Date, primary_key=True, nullable=False, index=True
+    )
     ean: Mapped[str] = mapped_column(
         String(32),
         ForeignKey("articles.ean", ondelete="CASCADE"),
@@ -407,12 +457,18 @@ class DailyPrice(PublicBase):
         nullable=False,
         index=True,
     )
-    price: Mapped[int] = mapped_column(Integer, nullable=False)  # Integer Pesos Argentinos (ARS)
-    unit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Price per standard base unit
+    price: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )  # Integer Pesos Argentinos (ARS)
+    unit_price: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )  # Price per standard base unit
 
     # Relationships
     article: Mapped[Article] = relationship("Article", back_populates="prices")
-    point_of_sale: Mapped[PointOfSale] = relationship("PointOfSale", back_populates="prices")
+    point_of_sale: Mapped[PointOfSale] = relationship(
+        "PointOfSale", back_populates="prices"
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         if "store_id" in kwargs and "store_code" not in kwargs:
@@ -467,7 +523,9 @@ class DailyProductMetric(PublicBase):
 
     __tablename__ = "daily_product_metrics"
 
-    date: Mapped[dt.date] = mapped_column(Date, primary_key=True, nullable=False, index=True)
+    date: Mapped[dt.date] = mapped_column(
+        Date, primary_key=True, nullable=False, index=True
+    )
     ean: Mapped[str] = mapped_column(
         String(32),
         ForeignKey("articles.ean", ondelete="CASCADE"),
@@ -475,7 +533,9 @@ class DailyProductMetric(PublicBase):
         nullable=False,
         index=True,
     )
-    city: Mapped[str] = mapped_column(String(100), primary_key=True, nullable=False, index=True)
+    city: Mapped[str] = mapped_column(
+        String(100), primary_key=True, nullable=False, index=True
+    )
 
     min_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -503,7 +563,6 @@ class DailyProductMetric(PublicBase):
             kwargs["median_price"] = kwargs.pop("reference_price")
         super().__init__(**kwargs)
 
-
     @property
     def city_name(self) -> str:
         return self.city
@@ -520,14 +579,15 @@ class DailyProductMetric(PublicBase):
         return f"<DailyProductMetric(date={self.date}, ean='{self.ean}', city='{self.city}', median={self.median_price})>"
 
 
-
 class UnreviewedArticle(PublicBase):
     """Staging table for newly discovered or low-confidence unclassified products."""
 
     __tablename__ = "unreviewed_articles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ean: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    ean: Mapped[str] = mapped_column(
+        String(32), unique=True, nullable=False, index=True
+    )
     raw_description: Mapped[str] = mapped_column(Text, nullable=False)
     suggested_brand: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     suggested_package: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -538,7 +598,9 @@ class UnreviewedArticle(PublicBase):
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime, default=lambda: dt.datetime.now(dt.timezone.utc), nullable=False
     )
-    reason: Mapped[str] = mapped_column(String(255), default="Unclassified / New SEPA Article")
+    reason: Mapped[str] = mapped_column(
+        String(255), default="Unclassified / New SEPA Article"
+    )
 
     suggested_category: Mapped[Optional[Category]] = relationship("Category")
 
@@ -570,7 +632,9 @@ class Timestamp:
 class City:
     """Compatibility helper for legacy city references."""
 
-    def __init__(self, name: str = "", state: Any = None, id: Optional[int] = None) -> None:
+    def __init__(
+        self, name: str = "", state: Any = None, id: Optional[int] = None
+    ) -> None:
         self.id = id
         self.name = name
         self.state = state
@@ -585,7 +649,9 @@ class City:
 class State:
     """Compatibility helper for legacy state references."""
 
-    def __init__(self, code: str = "", name: str = "", id: Optional[int] = None) -> None:
+    def __init__(
+        self, code: str = "", name: str = "", id: Optional[int] = None
+    ) -> None:
         self.id = id
         self.code = code
         self.name = name
@@ -660,5 +726,3 @@ class ArticleDescription:
 
     def __repr__(self) -> str:
         return f"<ArticleDescription {self.content}>"
-
-

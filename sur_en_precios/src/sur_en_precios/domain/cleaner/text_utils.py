@@ -51,8 +51,24 @@ def title_case_spanish(text: str | None) -> str:
     if not text:
         return ""
     lowercase_words = {
-        "de", "del", "la", "las", "el", "los", "en", "con", "sin", "por", "para",
-        "y", "o", "u", "e", "a", "al", "d'",
+        "de",
+        "del",
+        "la",
+        "las",
+        "el",
+        "los",
+        "en",
+        "con",
+        "sin",
+        "por",
+        "para",
+        "y",
+        "o",
+        "u",
+        "e",
+        "a",
+        "al",
+        "d'",
     }
     words = clean_whitespace(text).split()
     capitalized: List[str] = []

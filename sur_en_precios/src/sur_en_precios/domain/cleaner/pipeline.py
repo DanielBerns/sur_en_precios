@@ -252,7 +252,9 @@ class MigrationPipeline:
         self._migrate_points_of_sale(source_cur)
 
         source_conn.close()
-        logger.info(f"Successfully migrated and cleaned {processed_count} unique articles.")
+        logger.info(
+            f"Successfully migrated and cleaned {processed_count} unique articles."
+        )
         return processed_count
 
     def _migrate_points_of_sale(self, source_cur: sqlite3.Cursor) -> None:

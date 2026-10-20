@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Auditoría de Canastas — Administración{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #3a506b; padding-bottom: 1rem;">
+        <div>
+            <a href="{{ url_for('admin.dashboard') }}" style="color: var(--accent); font-size: 0.85rem; text-decoration: none;">&larr; Volver al Panel</a>
+            <h2 style="color: var(--accent); margin: 0.25rem 0 0 0;">Auditoría de Canastas (Públicas y Privadas)</h2>
+        </div>
+        <div>
+            <span class="badge badge-info" style="padding: 6px 12px;">Total: {{ baskets|length }} canastas</span>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="padding: 0; overflow-x: auto;">
+    <table style="margin-top: 0;">
+        <thead>
+            <tr>
+                <th style="padding-left: 1.5rem;">ID</th>
+                <th>Nombre de la Canasta</th>
+                <th>Usuario Propietario</th>
+                <th>Visibilidad</th>
+                <th style="text-align: center;">Artículos</th>
+                <th>Fecha de Creación</th>
+                <th style="text-align: right; padding-right: 1.5rem;">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in baskets %}
+            <tr>
+                <td style="padding-left: 1.5rem; color: #a0aec0;">#{{ b.id }}</td>
+                <td>
+                    <strong>{{ b.name }}</strong>
+                    <div style="font-size: 0.75rem; color: #a0aec0; font-family: monospace;">UUID: {{ b.uuid }}</div>
+                </td>
+                <td>
+                    <span style="color: var(--accent); font-weight: 500;">
+                        {{ b.user.username if b.user else 'Desconocido' }}
+                    </span>
+                    {% if b.user and b.user.is_admin %}
+                        <span class="badge badge-warning" style="font-size: 0.7rem; margin-left: 0.25rem;">Admin</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if b.is_public %}
+                        <span class="badge badge-public">Pública</span>
+                    {% else %}
+                        <span class="badge badge-private">Privada</span>
+                    {% endif %}
+                </td>
+                <td style="text-align: center;">
+                    <span class="badge" style="background: #13223f; border: 1px solid #3a506b;">
+                        {{ b.items|length }}
+                    </span>
+                </td>
+                <td style="color: #a0aec0; font-size: 0.85rem;">
+                    {{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else '-' }}
+                </td>
+                <td style="text-align: right; padding-right: 1.5rem;">
+                    <a href="{{ url_for('admin.basket_detail', uuid_str=b.uuid) }}" class="btn btn-secondary btn-sm" title="Ver detalles y artículos">
+                        Inspeccionar
+                    </a>
+                    <a href="{{ url_for('optimize.optimize', list_id=b.id) }}" class="btn btn-sm btn-success" style="margin-left: 0.35rem;" title="Optimizar precios">
+                        Optimizar
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" style="text-align: center; padding: 2rem; color: #a0aec0;">
+                    No hay canastas creadas en la base de datos.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

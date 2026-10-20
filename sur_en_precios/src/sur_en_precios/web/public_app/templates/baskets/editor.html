@@ -1,0 +1,448 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="margin-bottom: 1rem;">
+    <a href="{{ url_for('baskets.baskets') }}" style="color: var(--accent); text-decoration: none;">&larr; {{ _('Volver a Mis Canastas') }}</a>
+</div>
+
+<form method="POST" action="{{ url_for('baskets.save_basket', basket_id=basket.id) }}" id="basket_form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="eans" id="eans_input" value="{{ eans_csv }}">
+
+    <div class="card">
+        <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
+            <div style="flex: 1; min-width: 250px;">
+                <label><strong>{{ _('Nombre de la Canasta') }}:</strong></label>
+                <input type="text" name="name" value="{{ basket.name }}" required style="font-size: 1.1rem; font-weight: bold; margin-top: 0.25rem;">
+            </div>
+            <div class="toggle-switch-wrapper">
+                <label>
+                    <input type="checkbox" name="is_public" value="1" {% if basket.is_public %}checked{% endif %}>
+                    <strong>{{ _('Canasta Pública') }}</strong>
+                </label>
+                <span style="font-size: 0.85rem; color: #a0aec0;">({{ _('Permite compartir con otros mediante UUID') }})</span>
+            </div>
+            <div>
+                <button type="submit" name="action" value="save" class="btn btn-success">{{ _('Guardar Cambios') }}</button>
+                <button type="submit" name="action" value="optimize" class="btn">{{ _('Optimizar Precios') }}</button>
+                <a href="{{ url_for('baskets.export_basket', basket_id=basket.id) }}" class="btn btn-secondary">{{ _('Descargar YAML') }}</a>
+            </div>
+        </div>
+
+        {% if basket.is_public and basket.uuid %}
+        <div class="share-banner">
+            <div>
+                <strong>{{ _('UUID para Compartir:') }}</strong>
+                <code>{{ basket.uuid }}</code>
+            </div>
+            <div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyText('{{ basket.uuid }}', this)">{{ _('Copiar UUID') }}</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyText('{{ url_for('baskets.view_public_basket', uuid_str=basket.uuid, _external=True) }}', this)">{{ _('Copiar Enlace') }}</button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="editor-grid">
+        <!-- Left Column: Basket Items Table -->
+        <div class="card">
+            <h3>{{ _('Artículos en la Canasta') }} (<span id="items_count">{{ items_data|length }}</span>)</h3>
+            <p style="font-size: 0.85rem; color: #a0aec0;">
+                {{ _('Define las cantidades y ponderaciones fraccionarias para el cálculo de la canasta. Desmarca un artículo para excluirlo temporalmente de la optimización.') }}
+            </p>
+
+            <div style="overflow-x: auto;">
+                <table id="basket_items_table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px; text-align: center;">{{ _('Activo') }}</th>
+                            <th>{{ _('Producto') }}</th>
+                            <th style="width: 75px;">{{ _('Cant. (Q)') }}</th>
+                            <th style="width: 95px;">{{ _('Frac. (N/D)') }}</th>
+                            <th style="width: 80px; text-align: center;">{{ _('Pond. (W)') }}</th>
+                            <th style="width: 50px;">{{ _('Acción') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody id="basket_items_tbody">
+                        {% for item in items_data %}
+                        <tr id="row_{{ item.ean }}">
+                            <td style="text-align: center;">
+                                <input type="checkbox" name="item_selected_{{ item.ean }}" value="1" {% if item.selected %}checked{% endif %}>
+                            </td>
+                            <td>
+                                <div><strong>{{ item.name }}</strong></div>
+                                <div style="font-size: 0.8rem; color: #a0aec0;">
+                                    <span>{{ item.brand or '-' }}</span> |
+                                    <span>{{ item.category or '-' }}</span> |
+                                    <code>{{ item.ean }}</code>
+                                </div>
+                            </td>
+                            <td>
+                                <input type="number" name="item_quantity_{{ item.ean }}" value="{{ item.quantity }}" min="1" required style="width: 65px; padding: 0.4rem;" oninput="updateRowWeight('{{ item.ean }}')">
+                            </td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <input type="number" name="item_numerator_{{ item.ean }}" value="{{ item.numerator }}" min="1" required style="width: 40px; padding: 0.4rem;" oninput="updateRowWeight('{{ item.ean }}')">
+                                    <span>/</span>
+                                    <input type="number" name="item_denominator_{{ item.ean }}" value="{{ item.denominator }}" min="1" required style="width: 40px; padding: 0.4rem;" oninput="updateRowWeight('{{ item.ean }}')">
+                                </div>
+                            </td>
+                            <td style="text-align: center;">
+                                <strong id="weight_{{ item.ean }}" style="color: var(--accent); font-size: 0.95rem;">
+                                    {{ "%.2f"|format(item.quantity * item.numerator / item.denominator) if item.denominator else item.quantity }}
+                                </strong>
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-danger btn-sm" onclick="removeItem('{{ item.ean }}')">&times;</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div id="no_items_msg" style="{% if items_data %}display: none;{% endif %} padding: 2rem 0; text-align: center; color: #a0aec0;">
+                {{ _('No hay artículos en la canasta. Utiliza el buscador o explorador de categorías para agregar productos.') }}
+            </div>
+        </div>
+
+        <!-- Right Column: Product Search & Category Browser -->
+        <div class="card">
+            <h3>{{ _('Buscador de Artículos') }}</h3>
+            <!-- Tab Switcher -->
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 1px solid #3a506b; padding-bottom: 0.75rem;">
+                <button type="button" id="tab_search_btn" class="btn btn-sm btn-success" onclick="switchRightPanelTab('search')">
+                    🔍 {{ _('Búsqueda de Texto') }}
+                </button>
+                <button type="button" id="tab_categories_btn" class="btn btn-sm btn-secondary" onclick="switchRightPanelTab('categories')">
+                    📂 {{ _('Explorar Categorías') }}
+                </button>
+            </div>
+
+            <!-- Panel 1: Text Search -->
+            <div id="panel_text_search">
+                <p style="font-size: 0.85rem; color: #a0aec0; margin-top: 0;">
+                    {{ _('Busca por descripción, marca o código EAN. Puedes elegir búsqueda aproximada o exacta.') }}
+                </p>
+
+                <div class="mode-selector">
+                    <label>
+                        <input type="radio" name="search_mode" value="fuzzy" checked id="mode_fuzzy">
+                        {{ _('Aproximada (Fuzzy)') }}
+                    </label>
+                    <label>
+                        <input type="radio" name="search_mode" value="exact" id="mode_exact">
+                        {{ _('Exacta') }}
+                    </label>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="search_input" placeholder="{{ _('Buscar producto (ej. leche, arroz, quilmes)...') }}" onkeydown="if(event.key==='Enter'){event.preventDefault();searchArticles();}">
+                    <button type="button" onclick="searchArticles()" class="btn">{{ _('Buscar') }}</button>
+                </div>
+            </div>
+
+            <!-- Panel 2: Two-Level Category Browser -->
+            <div id="panel_category_browse" style="display: none;">
+                <p style="font-size: 0.85rem; color: #a0aec0; margin-top: 0;">
+                    {{ _('Explora el catálogo por Departamento y Subcategoría para agregar artículos masivamente:') }}
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div>
+                        <label style="font-size: 0.85rem; font-weight: bold; color: var(--accent);">{{ _('1. Departamento:') }}</label>
+                        <select id="dept_select" onchange="onDepartmentSelect()" style="margin-top: 0.25rem;">
+                            <option value="">-- {{ _('Selecciona un Departamento') }} --</option>
+                            {% for dept in departments %}
+                            <option value="{{ dept.slug }}">{{ dept.name }} ({{ dept.children|length }} subcat.)</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 0.85rem; font-weight: bold; color: var(--accent);">{{ _('2. Subcategoría:') }}</label>
+                        <select id="subcat_select" onchange="onSubcategorySelect()" disabled style="margin-top: 0.25rem;">
+                            <option value="">-- {{ _('Selecciona primero un departamento') }} --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Bar -->
+            <div id="search_actions_bar" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-top: 1rem; min-height: 32px; gap: 0.5rem;">
+                <span id="search_results_count" style="font-size: 0.85rem; color: #a0aec0;"></span>
+                <button type="button" id="btn_add_all_found" class="btn btn-sm btn-secondary" onclick="addAllFoundArticles()" disabled style="opacity: 0.6; cursor: not-allowed;">
+                    + {{ _('Agregar todos los artículos encontrados') }}
+                </button>
+            </div>
+
+            <!-- Results Box -->
+            <div class="search-results-box" id="search_results_container">
+                <div id="search_placeholder" style="text-align: center; padding: 2rem 0; color: #a0aec0;">
+                    {{ _('Escribe un término o selecciona una categoría para ver productos.') }}
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+    let eanSet = new Set({{ eans_list | tojson }});
+    let lastSearchResults = [];
+    const categoriesData = {{ departments_json | safe }};
+
+    function updateRowWeight(ean) {
+        const qInput = document.querySelector('input[name="item_quantity_' + ean + '"]');
+        const nInput = document.querySelector('input[name="item_numerator_' + ean + '"]');
+        const dInput = document.querySelector('input[name="item_denominator_' + ean + '"]');
+        const wSpan = document.getElementById('weight_' + ean);
+        if (qInput && nInput && dInput && wSpan) {
+            const q = parseFloat(qInput.value || 1);
+            const n = parseFloat(nInput.value || 1);
+            const d = parseFloat(dInput.value || 1) || 1;
+            wSpan.innerText = (q * n / d).toFixed(2);
+        }
+    }
+
+    function switchRightPanelTab(tab) {
+        const searchPanel = document.getElementById('panel_text_search');
+        const catPanel = document.getElementById('panel_category_browse');
+        const btnSearch = document.getElementById('tab_search_btn');
+        const btnCat = document.getElementById('tab_categories_btn');
+
+        if (tab === 'search') {
+            searchPanel.style.display = 'block';
+            catPanel.style.display = 'none';
+            btnSearch.className = 'btn btn-sm btn-success';
+            btnCat.className = 'btn btn-sm btn-secondary';
+        } else {
+            searchPanel.style.display = 'none';
+            catPanel.style.display = 'block';
+            btnSearch.className = 'btn btn-sm btn-secondary';
+            btnCat.className = 'btn btn-sm btn-success';
+        }
+    }
+
+    function onDepartmentSelect() {
+        const deptSlug = document.getElementById('dept_select').value;
+        const subcatSelect = document.getElementById('subcat_select');
+        subcatSelect.innerHTML = '<option value="">-- {{ _("Selecciona una Subcategoría") }} --</option>';
+
+        if (!deptSlug) {
+            subcatSelect.disabled = true;
+            return;
+        }
+
+        const deptObj = categoriesData.find(d => d.slug === deptSlug);
+        if (deptObj && deptObj.children && deptObj.children.length > 0) {
+            deptObj.children.forEach(sub => {
+                const opt = document.createElement('option');
+                opt.value = sub.slug;
+                opt.innerText = sub.name;
+                subcatSelect.appendChild(opt);
+            });
+            subcatSelect.disabled = false;
+        } else {
+            subcatSelect.disabled = true;
+        }
+    }
+
+    function onSubcategorySelect() {
+        const subcatSlug = document.getElementById('subcat_select').value;
+        if (!subcatSlug) return;
+
+        const container = document.getElementById('search_results_container');
+        const btnAll = document.getElementById('btn_add_all_found');
+        const countSpan = document.getElementById('search_results_count');
+
+        lastSearchResults = [];
+        if (btnAll) {
+            btnAll.disabled = true;
+            btnAll.className = 'btn btn-sm btn-secondary';
+            btnAll.style.opacity = '0.6';
+            btnAll.style.cursor = 'not-allowed';
+        }
+        if (countSpan) {
+            countSpan.innerText = '';
+        }
+
+        container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: var(--accent);">Cargando artículos de la subcategoría...</div>';
+
+        fetch('/api/categories/' + encodeURIComponent(subcatSlug) + '/articles')
+            .then(r => r.json())
+            .then(data => {
+                renderArticleResults(data);
+            })
+            .catch(err => {
+                container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: var(--danger);">Error al cargar artículos de la subcategoría.</div>';
+            });
+    }
+
+    function updateEansCsv() {
+        const list = Array.from(eanSet);
+        document.getElementById('eans_input').value = list.join(',');
+        document.getElementById('items_count').innerText = list.length;
+        const noItemsMsg = document.getElementById('no_items_msg');
+        if (list.length === 0) {
+            noItemsMsg.style.display = 'block';
+        } else {
+            noItemsMsg.style.display = 'none';
+        }
+    }
+
+    function removeItem(ean) {
+        const row = document.getElementById('row_' + ean);
+        if (row) {
+            row.remove();
+            eanSet.delete(ean);
+            updateEansCsv();
+        }
+    }
+
+    function addItemToBasket(ean, name, brand, category, incrementIfExists = true) {
+        if (eanSet.has(ean)) {
+            if (incrementIfExists) {
+                const qtyInput = document.querySelector('input[name="item_quantity_' + ean + '"]');
+                if (qtyInput) {
+                    qtyInput.value = parseInt(qtyInput.value || 1) + 1;
+                    qtyInput.style.borderColor = 'var(--accent)';
+                    setTimeout(() => qtyInput.style.borderColor = '#3a506b', 1000);
+                    updateRowWeight(ean);
+                }
+            }
+            const chk = document.querySelector('input[name="item_selected_' + ean + '"]');
+            if (chk) {
+                chk.checked = true;
+            }
+            return;
+        }
+
+        eanSet.add(ean);
+        updateEansCsv();
+
+        const tbody = document.getElementById('basket_items_tbody');
+        const tr = document.createElement('tr');
+        tr.id = 'row_' + ean;
+        tr.innerHTML = `
+            <td style="text-align: center;">
+                <input type="checkbox" name="item_selected_${ean}" value="1" checked>
+            </td>
+            <td>
+                <div><strong>${name}</strong></div>
+                <div style="font-size: 0.8rem; color: #a0aec0;">
+                    <span>${brand || '-'}</span> |
+                    <span>${category || '-'}</span> |
+                    <code>${ean}</code>
+                </div>
+            </td>
+            <td>
+                <input type="number" name="item_quantity_${ean}" value="1" min="1" required style="width: 65px; padding: 0.4rem;" oninput="updateRowWeight('${ean}')">
+            </td>
+            <td>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <input type="number" name="item_numerator_${ean}" value="1" min="1" required style="width: 40px; padding: 0.4rem;" oninput="updateRowWeight('${ean}')">
+                    <span>/</span>
+                    <input type="number" name="item_denominator_${ean}" value="1" min="1" required style="width: 40px; padding: 0.4rem;" oninput="updateRowWeight('${ean}')">
+                </div>
+            </td>
+            <td style="text-align: center;">
+                <strong id="weight_${ean}" style="color: var(--accent); font-size: 0.95rem;">1.00</strong>
+            </td>
+            <td>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeItem('${ean}')">&times;</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function addAllFoundArticles() {
+        if (!lastSearchResults || lastSearchResults.length === 0) return;
+        lastSearchResults.forEach(item => {
+            addItemToBasket(item.ean, item.name || '', item.brand || '', item.category || '', false);
+        });
+        const btn = document.getElementById('btn_add_all_found');
+        if (btn) {
+            const origText = btn.innerText;
+            btn.innerText = "¡Agregados!";
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-success');
+            setTimeout(() => {
+                btn.innerText = origText;
+            }, 1500);
+        }
+    }
+    const selectAllFoundArticles = addAllFoundArticles;
+
+    function renderArticleResults(data) {
+        const container = document.getElementById('search_results_container');
+        const btnAll = document.getElementById('btn_add_all_found');
+        const countSpan = document.getElementById('search_results_count');
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: #a0aec0;">No se encontraron artículos.</div>';
+            return;
+        }
+        lastSearchResults = data;
+        if (btnAll) {
+            btnAll.disabled = false;
+            btnAll.className = 'btn btn-sm btn-success';
+            btnAll.style.opacity = '1';
+            btnAll.style.cursor = 'pointer';
+        }
+        if (countSpan) {
+            countSpan.innerText = data.length + ' ' + (data.length === 1 ? 'artículo disponible' : 'artículos disponibles');
+        }
+
+        container.innerHTML = '';
+        data.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'result-card';
+            const safeName = (item.name || '').replace(/'/g, "\\'");
+            const safeBrand = (item.brand || '').replace(/'/g, "\\'");
+            const safeCat = (item.category || '').replace(/'/g, "\\'");
+
+            card.innerHTML = `
+                <div style="flex: 1; padding-right: 0.5rem;">
+                    <div style="font-weight: bold; font-size: 0.95rem;">${item.name}</div>
+                    <div style="font-size: 0.8rem; color: #a0aec0; margin-top: 2px;">
+                        <span>${item.brand || '-'}</span> | <span>${item.category || '-'}</span> | <a href="/article/${encodeURIComponent(item.ean)}" class="ean-link" onclick="openPriceStatsModal(event, '${item.ean}')" style="padding: 0;"><code>${item.ean}</code> 📊</a>
+                    </div>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-sm btn-success" onclick="addItemToBasket('${item.ean}', '${safeName}', '${safeBrand}', '${safeCat}')">+ Agregar</button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    function searchArticles() {
+        const q = document.getElementById('search_input').value.trim();
+        if (!q) return;
+
+        const mode = document.getElementById('mode_exact').checked ? 'exact' : 'fuzzy';
+        const container = document.getElementById('search_results_container');
+        const btnAll = document.getElementById('btn_add_all_found');
+        const countSpan = document.getElementById('search_results_count');
+
+        lastSearchResults = [];
+        if (btnAll) {
+            btnAll.disabled = true;
+            btnAll.className = 'btn btn-sm btn-secondary';
+            btnAll.style.opacity = '0.6';
+            btnAll.style.cursor = 'not-allowed';
+        }
+        if (countSpan) {
+            countSpan.innerText = '';
+        }
+
+        container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: var(--accent);">Buscando productos...</div>';
+
+        fetch('{{ url_for("api.api_search_articles") }}?q=' + encodeURIComponent(q) + '&mode=' + mode)
+            .then(r => r.json())
+            .then(data => {
+                renderArticleResults(data);
+            })
+            .catch(err => {
+                container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: var(--danger);">Error al buscar artículos.</div>';
+            });
+    }
+</script>
+{% endblock %}

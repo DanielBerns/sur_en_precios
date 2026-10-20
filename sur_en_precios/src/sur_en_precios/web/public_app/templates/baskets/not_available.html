@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ _("Canasta no disponible") }}</h2>
+    <p>{{ _("Esta canasta es privada o el enlace es incorrecto.") }}</p>
+    <a href="{{ url_for('baskets.baskets') }}" class="btn">{{ _("Ir a Mis Canastas") }}</a>
+</div>
+{% endblock %}

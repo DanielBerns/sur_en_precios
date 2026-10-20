@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sur_en_precios.domain.models import ArticlePriceStats
 from sur_en_precios.domain.models_public import (
@@ -98,6 +98,17 @@ class CatalogRepositoryPort(ABC):
         self, query: str, limit: int = 50, mode: str = "fuzzy"
     ) -> List[ArticleCard]: ...
 
+    def search_articles_paginated(
+        self,
+        query: str,
+        page: int = 1,
+        per_page: int = 20,
+        mode: str = "fuzzy",
+    ) -> Tuple[List[ArticleCard], int]:
+        """Searches articles with pagination, returning (items_for_page, total_count)."""
+        items = self.search_articles(query, limit=per_page, mode=mode)
+        return items, len(items)
+
     @abstractmethod
     def get_article_by_ean(self, ean: str) -> Optional[ArticleCard]: ...
 
@@ -155,10 +166,24 @@ class UserRepositoryPort(ABC):
     """Port for user accounts and basket management."""
 
     @abstractmethod
-    def create_user(self, email: str, password_hash: str) -> User: ...
+    def create_user(
+        self, username: str, password_hash: str, is_admin: bool = False
+    ) -> User: ...
 
-    @abstractmethod
-    def get_user_by_email(self, email: str) -> Optional[User]: ...
+    def get_user_by_username(self, username: str) -> Optional[User]:
+        return self.get_user_by_email(username)
+
+    def get_user_by_id(self, user_id: int) -> Optional[User]:
+        return None
+
+    def get_all_users(self) -> List[User]:
+        return []
+
+    def delete_user(self, user_id: int) -> bool:
+        return False
+
+    def count_admins(self) -> int:
+        return 0
 
     @abstractmethod
     def save_basket(self, basket: Basket) -> Basket: ...
@@ -166,8 +191,15 @@ class UserRepositoryPort(ABC):
     @abstractmethod
     def get_user_baskets(self, user_id: int) -> List[Basket]: ...
 
+    def get_all_baskets(self) -> List[Basket]:
+        return []
+
     @abstractmethod
     def get_basket_by_uuid(self, uuid_str: str) -> Optional[Basket]: ...
 
     @abstractmethod
     def delete_basket(self, basket_id: int, user_id: int) -> bool: ...
+
+    def get_user_by_email(self, email: str) -> Optional[User]:
+        """Backward-compatible lookup delegating to username."""
+        return self.get_user_by_username(email)

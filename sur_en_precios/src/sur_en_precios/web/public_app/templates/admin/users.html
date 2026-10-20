@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de Usuarios — Administración{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #3a506b; padding-bottom: 1rem;">
+        <div>
+            <a href="{{ url_for('admin.dashboard') }}" style="color: var(--accent); font-size: 0.85rem; text-decoration: none;">&larr; Volver al Panel</a>
+            <h2 style="color: var(--accent); margin: 0.25rem 0 0 0;">Gestión de Usuarios Registrados</h2>
+        </div>
+        <span class="badge badge-info" style="font-size: 0.9rem; padding: 6px 12px;">Total: {{ users|length }} usuarios</span>
+    </div>
+</div>
+
+<div class="card" style="padding: 0; overflow-x: auto;">
+    <table style="margin-top: 0;">
+        <thead>
+            <tr>
+                <th style="padding-left: 1.5rem;">ID</th>
+                <th>Nombre de Usuario</th>
+                <th>Rol</th>
+                <th>Fecha de Registro</th>
+                <th>Último Acceso</th>
+                <th style="text-align: center;">Canastas</th>
+                <th style="text-align: right; padding-right: 1.5rem;">Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td style="padding-left: 1.5rem; color: #a0aec0;">#{{ u.id }}</td>
+                <td>
+                    <strong>{{ u.username }}</strong>
+                    {% if u.id == current_user.id %}
+                        <span class="badge badge-info" style="margin-left: 0.4rem; font-size: 0.75rem;">(Tú)</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if u.is_admin %}
+                        <span class="badge badge-warning">Administrador</span>
+                    {% else %}
+                        <span class="badge" style="background: rgba(255,255,255,0.08); color: var(--text);">Usuario</span>
+                    {% endif %}
+                </td>
+                <td style="color: #a0aec0; font-size: 0.85rem;">
+                    {{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '-' }}
+                </td>
+                <td style="color: #a0aec0; font-size: 0.85rem;">
+                    {{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'Nunca' }}
+                </td>
+                <td style="text-align: center;">
+                    <span class="badge" style="background: #13223f; border: 1px solid #3a506b;">
+                        {{ u.baskets|length }}
+                    </span>
+                </td>
+                <td style="text-align: right; padding-right: 1.5rem;">
+                    {% if u.is_admin %}
+                        <small style="color: #a0aec0; font-style: italic;">Protegido</small>
+                    {% else %}
+                        <form method="POST" action="{{ url_for('admin.delete_user', user_id=u.id) }}" style="display: inline;" onsubmit="return confirm('¿Confirmas que deseas eliminar permanentemente al usuario {{ u.username }} y todas sus canastas? Esta acción no se puede deshacer.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm" title="Eliminar usuario">
+                                Eliminar
+                            </button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" style="text-align: center; padding: 2rem; color: #a0aec0;">
+                    No hay usuarios registrados en el sistema.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

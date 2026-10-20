@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h2>{{ _('Mis Canastas de Compras') }}</h2>
+    <a href="{{ url_for('baskets.new_basket') }}" class="btn btn-success">+ {{ _('Crear Nueva Canasta') }}</a>
+</div>
+
+<div class="grid">
+    <!-- Open Shared Public Basket Card -->
+    <div class="card">
+        <h3>{{ _('Abrir Canasta Compartida') }}</h3>
+        <p>{{ _('Si recibiste el código UUID de una canasta pública, ingrésalo aquí:') }}</p>
+        <form method="GET" action="{{ url_for('baskets.open_public_by_uuid') }}">
+            <div class="form-group">
+                <input type="text" name="uuid" placeholder="{{ _('Pegar UUID (ej. 3fa85f64-5717-4562-b3fc-...)') }}" required>
+            </div>
+            <button type="submit" class="btn btn-secondary">{{ _('Abrir Canasta') }}</button>
+        </form>
+    </div>
+
+    <!-- Upload Basket YAML Card -->
+    <div class="card">
+        <h3>{{ _('Importar Canasta (YAML)') }}</h3>
+        <p>{{ _('Sube un archivo de canasta en formato YAML:') }}</p>
+        <form method="POST" action="{{ url_for('baskets.import_basket') }}" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <input type="file" name="yaml_file" accept=".yaml,.yml" required style="padding: 0.5rem; background: #0b132b; border: 1px solid #3a506b; border-radius: 6px; width: 100%;">
+            </div>
+            <button type="submit" class="btn btn-secondary">{{ _('Subir e Importar') }}</button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <h3>{{ _('Mis Canastas Guardadas') }}</h3>
+    {% if shopping_lists %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Nombre de la Canasta') }}</th>
+                <th>{{ _('Visibilidad') }}</th>
+                <th>{{ _('Artículos') }}</th>
+                <th>{{ _('Acciones') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in shopping_lists %}
+            <tr>
+                <td><strong>{{ b.name }}</strong></td>
+                <td>
+                    {% if b.is_public %}
+                    <span class="badge badge-public">{{ _('Pública') }}</span>
+                    {% else %}
+                    <span class="badge badge-private">{{ _('Privada') }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ b.items|length }} {{ _('ítems') }}</td>
+                <td style="white-space: nowrap;">
+                    <a href="{{ url_for('baskets.edit_basket', basket_id=b.id) }}" class="btn btn-sm">{{ _('Editar') }}</a>
+                    <a href="{{ url_for('optimize.optimize', list_id=b.id) }}" class="btn btn-sm btn-success">{{ _('Optimizar') }}</a>
+                    <a href="{{ url_for('baskets.export_basket', basket_id=b.id) }}" class="btn btn-sm btn-secondary">{{ _('YAML') }}</a>
+                    <form method="POST" action="{{ url_for('baskets.delete_basket', basket_id=b.id) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar esta canasta?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-danger btn-sm">{{ _('Eliminar') }}</button>
+                    </form>
+                </td>
+            </tr>
+
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>{{ _('No tienes canastas de compras guardadas aún.') }}</p>
+    {% endif %}
+</div>
+{% endblock %}

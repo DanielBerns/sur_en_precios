@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Panel de Administración — Sur en Precios{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #3a506b; padding-bottom: 1rem;">
+        <div>
+            <h2 style="color: var(--accent); margin: 0;">Panel de Administración</h2>
+            <p style="color: #a0aec0; margin: 0.25rem 0 0 0; font-size: 0.95rem;">
+                Control central de usuarios, auditoría de canastas y actualización de catálogo regional.
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+            <a href="{{ url_for('admin.users') }}" class="btn btn-secondary btn-sm">👥 Usuarios</a>
+            <a href="{{ url_for('admin.all_baskets') }}" class="btn btn-secondary btn-sm">🛒 Todas las Canastas</a>
+            <a href="{{ url_for('admin.system') }}" class="btn btn-sm">⚙️ Estado del Catálogo</a>
+        </div>
+    </div>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+    <div class="stat-card" style="border-top: 4px solid var(--accent);">
+        <small style="color: var(--accent); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Usuarios Registrados</small>
+        <div class="stat-val" style="color: var(--text); font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">{{ users_count }}</div>
+        <a href="{{ url_for('admin.users') }}" style="color: var(--accent); font-size: 0.85rem; text-decoration: none;">Ver lista completa &rarr;</a>
+    </div>
+
+    <div class="stat-card" style="border-top: 4px solid var(--success);">
+        <small style="color: var(--success); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Canastas Creadas</small>
+        <div class="stat-val" style="color: var(--text); font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">{{ baskets_count }}</div>
+        <small style="color: #a0aec0; font-size: 0.8rem;">
+            <span class="badge badge-public">{{ public_baskets_count }} públicas</span>
+            <span class="badge badge-private" style="margin-left: 0.25rem;">{{ private_baskets_count }} privadas</span>
+        </small>
+    </div>
+
+    <div class="stat-card" style="border-top: 4px solid var(--warning);">
+        <small style="color: var(--warning); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Fecha del Catálogo</small>
+        <div class="stat-val" style="color: var(--warning); font-size: 1.5rem; font-weight: bold; margin: 0.5rem 0;">
+            {{ catalog_stats.latest_date }}
+        </div>
+        <small style="color: #a0aec0; font-size: 0.8rem;">
+            {{ catalog_stats.articles_count }} artículos | {{ catalog_stats.prices_count }} precios
+        </small>
+    </div>
+</div>
+
+<div class="grid" style="margin-top: 2rem;">
+    <div class="card">
+        <h3 style="color: var(--accent); margin-top: 0;">Gestión de Usuarios</h3>
+        <p style="color: #a0aec0; font-size: 0.9rem;">
+            Como administrador, puede auditar las cuentas registradas y eliminar usuarios. 
+            La eliminación de un usuario remueve automáticamente todas sus canastas privadas y asociaciones de forma segura.
+        </p>
+        <a href="{{ url_for('admin.users') }}" class="btn btn-secondary btn-sm" style="margin-top: 0.5rem;">Administrar Usuarios</a>
+    </div>
+
+    <div class="card">
+        <h3 style="color: var(--accent); margin-top: 0;">Auditoría de Canastas</h3>
+        <p style="color: #a0aec0; font-size: 0.9rem;">
+            Supervise todas las canastas de compras en la plataforma, tanto públicas como privadas. 
+            Inspeccione qué productos están optimizando los usuarios y detecte canastas de referencia.
+        </p>
+        <a href="{{ url_for('admin.all_baskets') }}" class="btn btn-secondary btn-sm" style="margin-top: 0.5rem;">Auditar Canastas</a>
+    </div>
+
+    <div class="card">
+        <h3 style="color: var(--accent); margin-top: 0;">Estado del Catálogo</h3>
+        <p style="color: #a0aec0; font-size: 0.9rem;">
+            Consulte las estadísticas y el estado de sincronización del catálogo regional de precios 
+            procesado en el servidor de la UNPSJB y transferido a este host.
+        </p>
+        <a href="{{ url_for('admin.system') }}" class="btn btn-sm" style="margin-top: 0.5rem;">Ver Estado del Catálogo</a>
+    </div>
+</div>
+{% endblock %}

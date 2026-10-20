@@ -51,6 +51,7 @@ def test_control_app_endpoints(tmp_path: Path) -> None:
 def test_public_app_endpoints(tmp_path: Path) -> None:
     workdir = tmp_path / "public_workdir"
     app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
     client = app.test_client()
 
     # Index page
@@ -78,6 +79,7 @@ def test_public_app_endpoints(tmp_path: Path) -> None:
 def test_basket_editor_and_public_sharing(tmp_path: Path) -> None:
     workdir = tmp_path / "editor_workdir"
     app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
     client = app.test_client()
 
     # 1. New basket creation redirects to editor
@@ -341,7 +343,8 @@ def test_optimize_renders_complete_stores_without_formatting_error(
 def test_taxonomy_navigation_routes(tmp_path: Path) -> None:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
-    from sur_en_precios.domain.models_public import Article, Category, PublicBase, Tag
+
+    from sur_en_precios.domain.models_public import Article, Category, PublicBase
 
     workdir = tmp_path / "taxonomy_workdir"
     app = create_public_app(workdir=workdir)
@@ -462,7 +465,10 @@ def test_article_price_stats_and_detail_view(tmp_path: Path) -> None:
     res_search = client.get("/?q=oliva")
     assert res_search.status_code == 200
     search_html = res_search.get_data(as_text=True)
-    assert "openPriceStatsModal(event, &#39;779001&#39;)" in search_html or "openPriceStatsModal(event, '779001')" in search_html
+    assert (
+        "openPriceStatsModal(event, &#39;779001&#39;)" in search_html
+        or "openPriceStatsModal(event, '779001')" in search_html
+    )
     assert 'href="/article/779001"' in search_html
     assert 'id="price_stats_dialog"' in search_html
 
@@ -470,7 +476,10 @@ def test_article_price_stats_and_detail_view(tmp_path: Path) -> None:
     res_subcat = client.get("/subcategory/aceites")
     assert res_subcat.status_code == 200
     subcat_html = res_subcat.get_data(as_text=True)
-    assert "openPriceStatsModal(event, &#39;779001&#39;)" in subcat_html or "openPriceStatsModal(event, '779001')" in subcat_html
+    assert (
+        "openPriceStatsModal(event, &#39;779001&#39;)" in subcat_html
+        or "openPriceStatsModal(event, '779001')" in subcat_html
+    )
     assert 'href="/article/779001"' in subcat_html
 
     # 3. Test API endpoint /api/articles/779001/price-stats
@@ -512,4 +521,3 @@ def test_article_price_stats_and_detail_view(tmp_path: Path) -> None:
     res_detail_404 = client.get("/article/000000")
     assert res_detail_404.status_code == 302
     assert res_detail_404.headers["Location"] == "/"
-

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from sur_en_precios.domain.cleaner.text_utils import normalize_nfc
-
 
 UNIT_CANONICAL_MAP = {
     "cc": "ml",
@@ -40,6 +39,7 @@ UNIT_CANONICAL_MAP = {
 @dataclass(frozen=True)
 class PackageInfo:
     """Structured representation of an article's package."""
+
     raw: str
     amount: Optional[float]
     unit: Optional[str]
@@ -110,7 +110,9 @@ def build_package_patterns(amount: float | None, unit: str | None) -> List[re.Pa
     elif u_lower == "kg":
         unit_variants.extend(["kg", "k", "kgs", "kg.", "kilos", "kilo"])
     elif u_lower in ("u", "un"):
-        unit_variants.extend(["un", "u", "und", "unid", "un.", "u.", "unidades", "unidad"])
+        unit_variants.extend(
+            ["un", "u", "und", "unid", "un.", "u.", "unidades", "unidad"]
+        )
     elif u_lower in ("m", "mt"):
         unit_variants.extend(["mt", "m", "mts", "mt.", "m.", "metros", "metro"])
 

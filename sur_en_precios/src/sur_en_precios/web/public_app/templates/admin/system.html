@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Estado del Catálogo — Administración{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid #3a506b; padding-bottom: 1rem;">
+        <div>
+            <a href="{{ url_for('admin.dashboard') }}" style="color: var(--accent); font-size: 0.85rem; text-decoration: none;">&larr; Volver al Panel</a>
+            <h2 style="color: var(--accent); margin: 0.25rem 0 0 0;">Estado del Catálogo y Sincronización</h2>
+        </div>
+        <div>
+            <span class="badge badge-warning" style="padding: 6px 12px; font-size: 0.9rem;">
+                Último Feed: {{ catalog_stats.latest_date }}
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+    <div class="stat-card" style="border-top: 4px solid var(--accent);">
+        <small style="color: var(--accent); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Artículos en Catálogo</small>
+        <div class="stat-val" style="color: var(--text); font-size: 1.8rem; font-weight: bold; margin: 0.5rem 0;">
+            {{ catalog_stats.articles_count }}
+        </div>
+        <small style="color: #a0aec0; font-size: 0.8rem;">Productos estandarizados</small>
+    </div>
+
+    <div class="stat-card" style="border-top: 4px solid var(--success);">
+        <small style="color: var(--success); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Comercios / Sucursales</small>
+        <div class="stat-val" style="color: var(--text); font-size: 1.8rem; font-weight: bold; margin: 0.5rem 0;">
+            {{ catalog_stats.pos_count }}
+        </div>
+        <small style="color: #a0aec0; font-size: 0.8rem;">Puntos de venta georreferenciados</small>
+    </div>
+
+    <div class="stat-card" style="border-top: 4px solid var(--warning);">
+        <small style="color: var(--warning); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Registros de Precios</small>
+        <div class="stat-val" style="color: var(--text); font-size: 1.8rem; font-weight: bold; margin: 0.5rem 0;">
+            {{ catalog_stats.prices_count }}
+        </div>
+        <small style="color: #a0aec0; font-size: 0.8rem;">Precios vigentes</small>
+    </div>
+</div>
+
+<div class="grid" style="margin-top: 2rem;">
+    <!-- Database File Diagnostics Card -->
+    <div class="card">
+        <h3 style="color: var(--accent); margin-top: 0;">Diagnóstico de Archivo (public.sqlite)</h3>
+        <p style="color: #a0aec0; font-size: 0.9rem; margin-bottom: 1.25rem;">
+            Información del archivo de base de datos del catálogo montado en el entorno de producción:
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.9rem;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">Estado del archivo:</span>
+                <span>
+                    {% if db_file_info.exists %}
+                        <span class="badge badge-lowest">DISPONIBLE</span>
+                    {% else %}
+                        <span class="badge badge-highest">NO DISPONIBLE</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">Tamaño en disco:</span>
+                <strong>{{ db_file_info.size_formatted }}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">Última sincronización (disco):</span>
+                <span>{{ db_file_info.mtime_formatted }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">Modo SQLite:</span>
+                <span>WAL (Write-Ahead Logging)</span>
+            </div>
+            <div style="margin-top: 0.5rem;">
+                <span style="color: #a0aec0; display: block; margin-bottom: 0.25rem; font-size: 0.8rem;">Ubicación:</span>
+                <code style="display: block; background: #0b132b; border: 1px solid #3a506b; border-radius: 4px; padding: 0.4rem 0.6rem; color: var(--accent); word-break: break-all; font-size: 0.8rem;">{{ db_file_info.path or workdir }}</code>
+            </div>
+        </div>
+    </div>
+
+    <!-- UNPSJB Synchronization Architecture Card -->
+    <div class="card">
+        <h3 style="color: var(--accent); margin-top: 0;">Flujo de Sincronización UNPSJB</h3>
+        <p style="color: #a0aec0; font-size: 0.9rem; line-height: 1.5;">
+            El procesamiento y transformación de datos diarios del SEPA se realiza de forma desacoplada para optimizar los recursos del servidor web:
+        </p>
+        <ul style="color: var(--text); font-size: 0.88rem; line-height: 1.6; padding-left: 1.25rem; margin-top: 0.5rem;">
+            <li>
+                <strong>Extracción y ETL en UNPSJB:</strong> La descarga de archivos masivos, descompresión, limpieza taxonómica y cálculo de precios de referencia se ejecutan en un servidor dedicado en la <em>Universidad Nacional de la Patagonia San Juan Bosco</em>.
+            </li>
+            <li>
+                <strong>Carga hacia Producción:</strong> El archivo <code>public.sqlite</code> optimizado e indexado se carga periódicamente hacia este host.
+            </li>
+            <li>
+                <strong>Persistencia Total de Usuarios:</strong> La base de datos de usuarios y canastas (<code>user_data.sqlite</code>) se mantiene completamente independiente mediante códigos EAN, asegurando cero pérdida de datos ante cada actualización.
+            </li>
+        </ul>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 2rem; padding: 0; overflow-x: auto;">
+    <div style="padding: 1rem 1.5rem; border-bottom: 1px solid #3a506b;">
+        <h3 style="color: var(--accent); margin: 0; font-size: 1.1rem;">Historial de Actualizaciones y Telemetría</h3>
+    </div>
+    <table style="margin-top: 0;">
+        <thead>
+            <tr>
+                <th style="padding-left: 1.5rem;">ID</th>
+                <th>Tarea</th>
+                <th>Estado</th>
+                <th>Duración</th>
+                <th>Fecha / Hora (UTC)</th>
+                <th style="padding-right: 1.5rem;">Detalle / Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in recent_logs %}
+            <tr>
+                <td style="padding-left: 1.5rem; color: #a0aec0;">#{{ log.id }}</td>
+                <td><strong>{{ log.job_name }}</strong></td>
+                <td>
+                    {% if log.status == 'SUCCESS' %}
+                        <span class="badge badge-lowest">EXITOSO</span>
+                    {% else %}
+                        <span class="badge badge-highest">ERROR</span>
+                    {% endif %}
+                </td>
+                <td>{{ log.duration_ms }} ms</td>
+                <td style="color: #a0aec0; font-size: 0.85rem;">
+                    {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '-' }}
+                </td>
+                <td style="padding-right: 1.5rem; color: {% if log.error_message %}var(--danger){% else %}#a0aec0{% endif %}; font-size: 0.85rem;">
+                    {{ log.error_message or 'Sin errores reportados' }}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align: center; padding: 2rem; color: #a0aec0;">
+                    No hay registros de actualizaciones previas.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

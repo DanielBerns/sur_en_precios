@@ -15,12 +15,6 @@ from sqlalchemy.orm import Session, configure_mappers
 
 from sur_en_precios.domain.models_public import (
     Article,
-    ArticleBrand,
-    ArticleCard,
-    ArticleCategory,
-    ArticleDescription,
-    ArticleMetric,
-    ArticleNumber,
     Branch,
     Brand,
     Business,
@@ -31,12 +25,9 @@ from sur_en_precios.domain.models_public import (
     Flag,
     Place,
     PointOfSale,
-    Price,
     PublicBase,
-    State,
     Store,
     Tag,
-    Timestamp,
     UnreviewedArticle,
 )
 

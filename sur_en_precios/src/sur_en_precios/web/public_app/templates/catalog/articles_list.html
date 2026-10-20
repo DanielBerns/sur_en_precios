@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <p>
+        {% if back_url %}
+        <a href="{{ back_url }}" style="color: var(--muted); text-decoration: none;">← {{ back_label }}</a>
+        {% else %}
+        <a href="{{ url_for('catalog.departments') }}" style="color: var(--muted); text-decoration: none;">← {{ _('Categorías') }}</a>
+        {% endif %}
+    </p>
+    <h2>{{ title }}</h2>
+    <p style="color: #a0aec0;">{{ subtitle }}</p>
+    {% if articles %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('EAN') }}</th>
+                <th>{{ _('Producto') }}</th>
+                <th>{{ _('Marca') }}</th>
+                <th>{{ _('Envase') }}</th>
+                <th>{{ _('Etiquetas') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in articles %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('catalog.article_detail', ean=a.ean) }}" class="ean-link" onclick="openPriceStatsModal(event, '{{ a.ean }}');" title="{{ _('Ver estadísticas de precio') }}">
+                        <code>{{ a.ean }}</code> 📊
+                    </a>
+                </td>
+                <td><strong>{{ a.name or a.clean_description }}</strong></td>
+                <td>{{ a.brand_name or '-' }}</td>
+                <td>{{ a.package or '-' }}</td>
+                <td>
+                    {% for tag in a.tags %}
+                    <a href="{{ url_for('catalog.tag_view', name=tag.name) }}" class="badge" style="background: #253355; color: var(--accent); text-decoration: none; margin-right: 4px;">
+                        #{{ tag.name }}
+                    </a>
+                    {% endfor %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if pagination and pagination.total_pages > 1 %}
+    <nav class="pagination" aria-label="{{ _('Paginación de artículos') }}">
+        {% if pagination.has_prev %}
+        <a href="?page={{ pagination.prev_num }}" class="page-link">&laquo; {{ _('Anterior') }}</a>
+        {% else %}
+        <span class="page-link disabled">&laquo; {{ _('Anterior') }}</span>
+        {% endif %}
+
+        {% for p in pagination.iter_pages() %}
+            {% if p %}
+                {% if p == pagination.page %}
+                <span class="page-link active">{{ p }}</span>
+                {% else %}
+                <a href="?page={{ p }}" class="page-link">{{ p }}</a>
+                {% endif %}
+            {% else %}
+                <span class="page-ellipsis">&hellip;</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if pagination.has_next %}
+        <a href="?page={{ pagination.next_num }}" class="page-link">{{ _('Siguiente') }} &raquo;</a>
+        {% else %}
+        <span class="page-link disabled">{{ _('Siguiente') }} &raquo;</span>
+        {% endif %}
+    </nav>
+    {% endif %}
+    {% else %}
+    <p style="padding: 1rem; color: #a0aec0;">{{ _('No se encontraron artículos.') }}</p>
+    {% endif %}
+</div>
+{% endblock %}

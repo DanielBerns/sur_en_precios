@@ -121,10 +121,14 @@ class TestPorts:
 
     def test_concrete_user_repository_port(self):
         class DummyUserRepo(UserRepositoryPort):
-            def create_user(self, email: str, password_hash: str) -> User:
-                return User(email=email, password_hash=password_hash)
+            def create_user(
+                self, username: str, password_hash: str, is_admin: bool = False
+            ) -> User:
+                return User(
+                    username=username, password_hash=password_hash, is_admin=is_admin
+                )
 
-            def get_user_by_email(self, email: str) -> Optional[User]:
+            def get_user_by_username(self, username: str) -> Optional[User]:
                 return None
 
             def save_basket(self, basket: Basket) -> Basket:
@@ -140,8 +144,8 @@ class TestPorts:
                 return True
 
         repo = DummyUserRepo()
-        user = repo.create_user("a@b.com", "h")
-        assert user.email == "a@b.com"
+        user = repo.create_user("testuser", "h")
+        assert user.username == "testuser"
         basket = Basket(name="Test", user=user)
         assert repo.save_basket(basket) == basket
         assert repo.delete_basket(1, 1) is True
@@ -228,9 +232,7 @@ class TestBasketOptimizerService:
         card1 = ArticleCard(article_number=ean1, description=desc1)
         card2 = ArticleCard(article_number=ean2, description=desc2)
 
-        public_session.add_all(
-            [store1, store2, card1, card2]
-        )
+        public_session.add_all([store1, store2, card1, card2])
         public_session.commit()
 
         # Store 1 prices: Leche=100, Pan=200 -> Total = 300

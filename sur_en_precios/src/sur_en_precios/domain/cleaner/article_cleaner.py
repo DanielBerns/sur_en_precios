@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Set
+from typing import List, Optional
 
 from sur_en_precios.domain.cleaner.brand_cleaner import (
     BrandLexicon,
@@ -26,6 +26,7 @@ from sur_en_precios.domain.cleaner.text_utils import (
 @dataclass
 class CleanedArticleData:
     """Standardized and cleaned representation of an article."""
+
     ean: str
     name: str
     clean_description: str
@@ -79,7 +80,9 @@ class ArticleCleaner:
             # Also strip without accents (e.g. 'canuelas' for 'cañuelas')
             b_stripped = strip_accents(b_clean)
             if b_stripped != b_clean:
-                text = re.sub(rf"\b{re.escape(b_stripped)}\b", " ", text, flags=re.IGNORECASE)
+                text = re.sub(
+                    rf"\b{re.escape(b_stripped)}\b", " ", text, flags=re.IGNORECASE
+                )
 
         # 3. Strip any supermarket private label or known brands from lexicon
         text = self.brand_lexicon.strip_brands(text)
@@ -94,7 +97,9 @@ class ArticleCleaner:
 
         return text or normalize_nfc(raw_description).strip().lower()
 
-    def clean_tag(self, raw_tag: str, brand_name: Optional[str], pkg_info: PackageInfo) -> str:
+    def clean_tag(
+        self, raw_tag: str, brand_name: Optional[str], pkg_info: PackageInfo
+    ) -> str:
         """Sanitize an existing tag, ensuring it does not retain brand or package fragments."""
         tag = normalize_nfc(raw_tag).strip().lower()
 
@@ -104,7 +109,9 @@ class ArticleCleaner:
             tag = re.sub(rf"\b{re.escape(b_clean)}\b", " ", tag, flags=re.IGNORECASE)
             b_stripped = strip_accents(b_clean)
             if b_stripped != b_clean:
-                tag = re.sub(rf"\b{re.escape(b_stripped)}\b", " ", tag, flags=re.IGNORECASE)
+                tag = re.sub(
+                    rf"\b{re.escape(b_stripped)}\b", " ", tag, flags=re.IGNORECASE
+                )
 
         # Strip package patterns
         if pkg_info.amount is not None and pkg_info.unit:

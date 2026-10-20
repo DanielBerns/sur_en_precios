@@ -4,7 +4,10 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from sur_en_precios.adapters.database.seeder import DEFAULT_HERMES_DB_PATH, seed_master_catalog
+from sur_en_precios.adapters.database.seeder import (
+    DEFAULT_HERMES_DB_PATH,
+    seed_master_catalog,
+)
 
 
 def test_seed_master_catalog() -> None:

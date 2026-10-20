@@ -13,16 +13,9 @@ from sur_en_precios.adapters.sepa_archive import ZipSepaDatasetAdapter
 from sur_en_precios.config import read_config
 from sur_en_precios.domain.models_public import (
     Article,
-    ArticleCard,
-    ArticleMetric,
-    ArticleNumber,
-    City,
     DailyPrice,
     DailyProductMetric,
     PointOfSale,
-    Price,
-    Store,
-    Timestamp,
 )
 
 
@@ -124,10 +117,14 @@ def run_etl_pipeline(
         store_cnt = session.execute(select(func.count(PointOfSale.id))).scalar_one()
         articles_cnt = session.execute(select(func.count(Article.id))).scalar_one()
         price_cnt = session.execute(
-            select(func.count()).select_from(DailyPrice).where(DailyPrice.date == target_date)
+            select(func.count())
+            .select_from(DailyPrice)
+            .where(DailyPrice.date == target_date)
         ).scalar_one()
         metric_cnt = session.execute(
-            select(func.count()).select_from(DailyProductMetric).where(DailyProductMetric.date == target_date)
+            select(func.count())
+            .select_from(DailyProductMetric)
+            .where(DailyProductMetric.date == target_date)
         ).scalar_one()
         city_breakdown = session.execute(
             select(DailyProductMetric.city, func.count())

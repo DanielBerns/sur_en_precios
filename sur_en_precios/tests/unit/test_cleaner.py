@@ -1,12 +1,9 @@
 """Unit tests for the cleaner subpackage (text_utils, package_parser, brand_cleaner, article_cleaner)."""
 
-import pytest
-
 from sur_en_precios.domain.cleaner.article_cleaner import ArticleCleaner
 from sur_en_precios.domain.cleaner.brand_cleaner import BrandLexicon, clean_brand_name
 from sur_en_precios.domain.cleaner.package_parser import parse_package
 from sur_en_precios.domain.cleaner.text_utils import (
-    clean_whitespace,
     normalize_nfc,
     slugify,
     strip_accents,
@@ -29,8 +26,14 @@ def test_strip_accents():
 
 
 def test_title_case_spanish():
-    assert title_case_spanish("aceite de oliva extra virgen") == "Aceite de Oliva Extra Virgen"
-    assert title_case_spanish("arroz con leche la serenisima") == "Arroz con Leche la Serenisima"
+    assert (
+        title_case_spanish("aceite de oliva extra virgen")
+        == "Aceite de Oliva Extra Virgen"
+    )
+    assert (
+        title_case_spanish("arroz con leche la serenisima")
+        == "Arroz con Leche la Serenisima"
+    )
     assert title_case_spanish("vino tinto malbec") == "Vino Tinto Malbec"
 
 

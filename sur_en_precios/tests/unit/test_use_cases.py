@@ -54,11 +54,9 @@ def test_process_and_publish_region_use_case(tmp_path: Path) -> None:
         assert "Aceite Oliva" in product.name
         assert product.brand_name == "Freir"
 
-
         stores = cat_repo.get_stores_by_city("Bahía Blanca")
         assert len(stores) >= 1
         assert any(s.code == "100-1-s1" for s in stores)
-
 
         # Test Optimize Basket Use Case against generated DB
         opt_use_case = OptimizeBasketUseCase(cat_repo, price_repo)

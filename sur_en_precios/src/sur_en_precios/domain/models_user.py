@@ -1,8 +1,8 @@
-"""ORM models for the user database (``user_data.sqlite``)."""
+"""ORM models for the user database (``user_data.sqlite``) using SQLAlchemy 2.0."""
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, List
+from typing import Any, List, Optional
 
 import bcrypt
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
@@ -19,30 +19,64 @@ class User(UserBase):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
+    username: Mapped[str] = mapped_column(
+        String(50), unique=True, nullable=False, index=True
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     baskets: Mapped[List["Basket"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
+    def __init__(
+        self,
+        username: Optional[str] = None,
+        email: Optional[str] = None,
+        password_hash: str = "",
+        is_admin: bool = False,
+        is_active: bool = True,
+        **kwargs: Any,
+    ):
+        effective_username = (username or email or "").strip().lower()
+        super().__init__(
+            username=effective_username,
+            password_hash=password_hash,
+            is_admin=is_admin,
+            is_active=is_active,
+            **kwargs,
+        )
+
+    @property
+    def email(self) -> str:
+        """Compatibility property for legacy code expecting user.email."""
+        return self.username
+
+    @email.setter
+    def email(self, value: str) -> None:
+        self.username = value.strip().lower()
+
     def set_password(self, password: str) -> None:
+        """Hashes password using bcrypt with salt and work factor 12."""
         self.password_hash = bcrypt.hashpw(
-            password.encode("utf-8"), bcrypt.gensalt()
+            password.encode("utf-8"), bcrypt.gensalt(12)
         ).decode("utf-8")
 
     def check_password(self, password: str) -> bool:
+        """Verifies password against stored bcrypt hash."""
+        if not self.password_hash:
+            return False
         return bcrypt.checkpw(
             password.encode("utf-8"), self.password_hash.encode("utf-8")
         )
 
     def __repr__(self) -> str:
-        return f"<User {self.email}>"
+        return f"<User {self.username}>"
 
 
 class Basket(UserBase):
@@ -57,7 +91,7 @@ class Basket(UserBase):
         default=lambda: str(uuid.uuid4()),
     )
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), nullable=False, index=True
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -79,7 +113,7 @@ class BasketItem(UserBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     basket_id: Mapped[int] = mapped_column(
-        ForeignKey("baskets.id"), nullable=False, index=True
+        ForeignKey("baskets.id", ondelete="CASCADE"), nullable=False, index=True
     )
     ean: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

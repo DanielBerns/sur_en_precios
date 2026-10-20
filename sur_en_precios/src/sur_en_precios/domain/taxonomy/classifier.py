@@ -8,7 +8,6 @@ from typing import List, Optional, Set, Tuple
 
 from sur_en_precios.domain.cleaner.article_cleaner import CleanedArticleData
 from sur_en_precios.domain.cleaner.text_utils import normalize_nfc, strip_accents
-from sur_en_precios.domain.taxonomy.categories import DEFAULT_TAXONOMY, get_taxonomy_map
 from sur_en_precios.domain.taxonomy.rules import CLASSIFICATION_RULES, FACET_TAG_RULES
 
 

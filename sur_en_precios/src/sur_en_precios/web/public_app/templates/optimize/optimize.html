@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ _('Optimización de Canasta de Compras') }}</h2>
+    <form method="GET" action="{{ url_for('optimize.optimize') }}">
+        {% if list_id %}
+        <input type="hidden" name="list_id" value="{{ list_id }}">
+        {% endif %}
+        {% if public_uuid %}
+        <input type="hidden" name="public_uuid" value="{{ public_uuid }}">
+        {% endif %}
+
+        {% if user_baskets %}
+        <div class="form-group">
+            <label><strong>{{ _('Cargar Canasta Guardada') }}</strong></label>
+            <select id="basket_selector" onchange="if(this.value){ const cityEl = document.querySelector('select[name=city]'); const dateEl = document.querySelector('input[name=date]'); const cityParam = cityEl ? ('&city=' + encodeURIComponent(cityEl.value)) : ''; const dateParam = dateEl ? ('&date=' + encodeURIComponent(dateEl.value)) : ''; window.location.href='{{ url_for('optimize.optimize') }}?list_id=' + this.value + cityParam + dateParam; }" style="margin-top: 0.25rem;">
+                <option value="">-- {{ _('Seleccionar una canasta guardada...') }} --</option>
+                {% for ub in user_baskets %}
+                <option value="{{ ub.id }}" {% if list_id and list_id|string == ub.id|string %}selected{% endif %}>
+                    {{ ub.name }} ({{ ub.items|length }} {{ _('artículos') }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        <div class="grid">
+            <div class="form-group">
+                <label><strong>{{ _('Ciudad') }}</strong></label>
+                <select name="city" required>
+                    {% for c in cities %}
+                    <option value="{{ c }}" {% if c == selected_city %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label><strong>{{ _('Fecha') }}</strong></label>
+                <input type="date" name="date" value="{{ selected_date_str }}" required>
+            </div>
+        </div>
+        <div class="form-group">
+            <label><strong>{{ _('Códigos EAN de la Canasta') }}</strong></label>
+            <input type="text" name="eans" value="{{ eans_str }}" placeholder="{{ _('Códigos EAN separados por coma o espacio') }}" required>
+        </div>
+        <button type="submit">{{ _('Calcular') }}</button>
+    </form>
+</div>
+
+{% if result %}
+{% if not result.item_by_item_optimal and not result.complete_stores and not result.partial_stores %}
+<div class="card" style="border-left: 6px solid var(--warning);">
+    <h3 style="color: var(--warning); margin-top: 0;">{{ _('Sin resultados para esta selección') }}</h3>
+    <p>{{ _('No se encontraron precios en comercios de') }} <strong>{{ selected_city }}</strong> {{ _('para la fecha') }} <strong>{{ selected_date_str }}</strong> {{ _('para los artículos consultados.') }}</p>
+    {% if unpriced_items %}
+    <p style="color: #a0aec0; font-size: 0.9rem;">{{ _('Artículos de la canasta sin disponibilidad registrada en esta localidad:') }}</p>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Código EAN') }}</th>
+                <th>{{ _('Producto') }}</th>
+                <th>{{ _('Marca') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in unpriced_items %}
+            <tr>
+                <td><code>{{ item.ean }}</code></td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.brand or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    <p style="margin-top: 1rem; color: #a0aec0; font-size: 0.85rem;">
+        {{ _('Sugerencia: Prueba seleccionando otra ciudad de la región o consultando artículos con precios en el catálogo.') }}
+    </p>
+</div>
+{% else %}
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+    {% if result.best_single_store %}
+    <div class="card" style="border-left: 6px solid var(--success); margin-bottom: 0;">
+        <span class="badge badge-lowest" style="margin-bottom: 0.5rem;">{{ _('Comercio Único') }}</span>
+        <h2>{{ result.best_single_store.store.chain_name }} — {{ result.best_single_store.store.store_name }}</h2>
+        <p style="font-size: 1.8rem; font-weight: bold; color: var(--success); margin: 0.5rem 0;">
+            {{ result.best_single_store.total_price | format_currency }}
+        </p>
+        <small style="color: #a0aec0;">{{ _('Costo total comprando todos los artículos en un solo local.') }}</small>
+    </div>
+    {% endif %}
+
+    {% if result.multi_store_total_price %}
+    <div class="card" style="border-left: 6px solid var(--accent); margin-bottom: 0;">
+        <span class="badge badge-info" style="margin-bottom: 0.5rem;">{{ _('Multi-Comercio Óptimo') }}</span>
+        <h2>{{ _('Combinación de Precios Mínimos') }}</h2>
+        <p style="font-size: 1.8rem; font-weight: bold; color: var(--accent); margin: 0.5rem 0;">
+            {{ result.multi_store_total_price | format_currency }}
+        </p>
+        {% if result.best_single_store and result.best_single_store.total_price > result.multi_store_total_price %}
+        <small style="color: var(--success); font-weight: bold;">
+            Ahorro de {{ (result.best_single_store.total_price - result.multi_store_total_price) | format_currency }}
+            ({{ "%.1f"|format(((result.best_single_store.total_price - result.multi_store_total_price) / result.best_single_store.total_price) * 100) }}%)
+            dividiendo compras entre comercios.
+        </small>
+        {% else %}
+        <small style="color: #a0aec0;">{{ _('Costo comprando cada producto en su punto de venta más barato.') }}</small>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if result.item_by_item_optimal %}
+<div class="card">
+    <h2>{{ _('Precios, Asignación Óptima y Dispersión por Artículo') }}</h2>
+    <p style="color: #a0aec0; font-size: 0.9rem;">
+        {{ _('Muestra el precio mínimo, precio de referencia (media geométrica), precio máximo y porcentaje de dispersión entre comercios de la ciudad.') }}
+    </p>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>{{ _('Producto') }}</th>
+                    <th style="text-align: center;">{{ _('Ponderador') }}</th>
+                    <th>{{ _('Precio Mínimo') }}</th>
+                    <th>{{ _('Precio Referencia') }}</th>
+                    <th>{{ _('Precio Máximo') }}</th>
+                    <th style="text-align: center;">{{ _('Dispersión') }}</th>
+                    <th>{{ _('Precio Unitario') }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for opt in result.item_by_item_optimal %}
+                <tr>
+                    <td>
+                        <div><strong>{{ opt.product.name }}</strong></div>
+                        <div style="font-size: 0.8rem; color: #a0aec0; margin-top: 2px;">
+                            <span>{{ opt.product.brand_name or '-' }}</span> | <code>{{ opt.product.ean }}</code>
+                        </div>
+                    </td>
+                    <td style="text-align: center;">
+                        <code>{{ opt.quantity }} × {{ opt.numerator }}/{{ opt.denominator }}</code>
+                    </td>
+                    <td>
+                        <strong style="color: var(--success);">{{ opt.price | format_currency }}</strong>
+                        <br><small style="color: #a0aec0;">{{ opt.cheapest_store.chain_name }} ({{ opt.cheapest_store.store_name }})</small>
+                    </td>
+                    <td>
+                        {% if opt.reference_price %}
+                        <span>{{ opt.reference_price | format_currency }}</span>
+                        {% else %}
+                        <span style="color: #a0aec0;">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if opt.max_price %}
+                        <span style="color: var(--danger);">{{ opt.max_price | format_currency }}</span>
+                        {% else %}
+                        <span style="color: #a0aec0;">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center;">
+                        {% if opt.price_dispersion is not none %}
+                            <span class="badge {% if opt.price_dispersion > 30 %}badge-danger{% elif opt.price_dispersion > 15 %}badge-warning{% else %}badge-lowest{% endif %}">
+                                {{ opt.price_dispersion }}%
+                            </span>
+                            {% if opt.max_price and opt.min_price and opt.max_price > opt.min_price %}
+                            <br><small style="color: #a0aec0;">+{{ (opt.max_price - opt.min_price) | format_currency }}</small>
+                            {% endif %}
+                        {% else %}
+                            <span style="color: #a0aec0;">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if opt.unit_price and opt.unit %}
+                        <strong>${{ "%.2f"|format(opt.unit_price) }} / {{ opt.unit }}</strong>
+                        {% else %}
+                        <span style="color: #a0aec0;">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if unpriced_items %}
+<div class="card" style="border-left: 6px solid var(--warning);">
+    <h3 style="color: var(--warning); margin-top: 0;">{{ _('Artículos sin disponibilidad en esta localidad') }} ({{ unpriced_items|length }})</h3>
+    <p style="color: #a0aec0; font-size: 0.9rem;">
+        {{ _('Los siguientes artículos de la canasta no tienen precios registrados en comercios de') }} <strong>{{ selected_city }}</strong> {{ _('para el') }} <strong>{{ selected_date_str }}</strong>:
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Código EAN') }}</th>
+                <th>{{ _('Producto') }}</th>
+                <th>{{ _('Marca') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in unpriced_items %}
+            <tr>
+                <td><code>{{ item.ean }}</code></td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.brand or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if result.suggested_substitutions %}
+<div class="card" style="border-left: 6px solid var(--warning);">
+    <h2>{{ _('Sugerencias de Ahorro: Alternativas Equivalentes') }}</h2>
+    <p>{{ _('Productos de la misma categoría a menor precio unitario o monto total:') }}</p>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Alternativa Sugerida') }}</th>
+                <th>{{ _('Comercio') }}</th>
+                <th>{{ _('Precio Alternativa') }}</th>
+                <th>{{ _('Ahorro Estimado') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sub in result.suggested_substitutions %}
+            <tr>
+                <td>
+                    <strong>{{ sub.product.name }}</strong>
+                    {% if sub.unit_price and sub.unit %}
+                    <br><small style="color: var(--muted);">${{ sub.unit_price }} / {{ sub.unit }}</small>
+                    {% endif %}
+                </td>
+                <td>{{ sub.cheapest_store.chain_name }} ({{ sub.cheapest_store.store_name }})</td>
+                <td><strong>{{ sub.price | format_currency }}</strong></td>
+                <td>
+                    <span class="badge badge-lowest">
+                        -{{ sub.savings_amount | format_currency }} ({{ sub.savings_percent }}%)
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if result.complete_stores %}
+<div class="card">
+    <h2>{{ _('Matriz de Precios por Comercio (Disponibilidad 100%%)') }}</h2>
+    <p>{{ _('Precios expresados en Pesos Argentinos (ARS) sin centavos para todos los comercios que disponen de la canasta completa:') }}</p>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Comercio / Sucursal') }}</th>
+                <th>{{ _('Total Canasta Ponderada') }}</th>
+                <th>{{ _('Cobertura') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for st in result.complete_stores %}
+            <tr>
+                <td><strong>{{ st.store.chain_name }}</strong> — {{ st.store.store_name }}</td>
+                <td><strong>{{ st.total_price | format_currency }}</strong></td>
+                <td><span class="badge badge-lowest">{{ _('100%% Cobertura') }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if result.partial_stores %}
+<div class="card">
+    <h2>{{ _('Comercios con Disponibilidad Parcial') }}</h2>
+    <p style="color: #a0aec0; font-size: 0.9rem;">
+        {{ _('Comercios que cuentan con una parte de los artículos solicitados:') }}
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Comercio / Sucursal') }}</th>
+                <th>{{ _('Subtotal Disponible') }}</th>
+                <th>{{ _('Artículos Disponibles') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for st in result.partial_stores %}
+            <tr>
+                <td>{{ st.store.chain_name }} — {{ st.store.store_name }}</td>
+                <td>{{ st.total_price | format_currency }}</td>
+                <td>
+                    <span class="badge badge-warning">
+                        {{ st.matched_items_count }} / {{ st.requested_items_count }} {{ _('artículos') }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

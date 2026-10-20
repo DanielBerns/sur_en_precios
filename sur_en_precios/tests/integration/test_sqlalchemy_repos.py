@@ -18,7 +18,6 @@ from sur_en_precios.domain.models_public import (
     DailyProductMetric,
     PointOfSale,
     PublicBase,
-    Tag,
 )
 from sur_en_precios.domain.models_user import (
     Basket,
@@ -130,14 +129,12 @@ def test_catalog_and_price_repositories() -> None:
 
         # Verify underlying tables
         assert (
-            session.scalar(select(Article).where(Article.ean == "779001"))
-            is not None
+            session.scalar(select(Article).where(Article.ean == "779001")) is not None
         )
-        assert (
-            session.scalar(select(Brand).where(Brand.name == "Freir"))
-            is not None
+        assert session.scalar(select(Brand).where(Brand.name == "Freir")) is not None
+        saved_store = session.scalar(
+            select(PointOfSale).where(PointOfSale.code == "s1")
         )
-        saved_store = session.scalar(select(PointOfSale).where(PointOfSale.code == "s1"))
         assert saved_store is not None
         assert saved_store.address == "Av. Colon 100"
         assert saved_store.latitude == -38.71

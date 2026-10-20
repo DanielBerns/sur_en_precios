@@ -49,7 +49,9 @@ class OptimizeBasketUseCase:
 
         all_query_eans = list(dict.fromkeys(eans + all_candidate_eans))
 
-        prices = self._price_repo.get_prices_for_basket(city, target_date, all_query_eans)
+        prices = self._price_repo.get_prices_for_basket(
+            city, target_date, all_query_eans
+        )
         reference_prices = self._price_repo.get_reference_prices(
             city, target_date, all_query_eans
         )

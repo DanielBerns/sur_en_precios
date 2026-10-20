@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <p>
+        <a href="javascript:history.back()" style="color: var(--muted); text-decoration: none;">← {{ _('Volver') }}</a>
+    </p>
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 1rem; border-bottom: 1px solid #3a506b; padding-bottom: 1.25rem;">
+        <div>
+            <h2 style="margin: 0; color: var(--accent);">{{ stats.name or stats.clean_description }}</h2>
+            <p style="color: #a0aec0; margin: 0.5rem 0;">
+                <span>Marca: <strong>{{ stats.brand_name or '-' }}</strong></span>
+                {% if stats.package %} | <span>Envase: <strong>{{ stats.package }}</strong></span>{% endif %}
+                {% if stats.category_name %} | <span>Categoría: <strong>{{ stats.category_name }}</strong></span>{% endif %}
+            </p>
+            <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem;">
+                <code style="font-size: 1.05rem; background: #0b132b; padding: 4px 8px; border-radius: 4px; border: 1px solid #3a506b; color: var(--accent);">EAN: {{ stats.ean }}</code>
+                {% if stats.date %}<span style="color: #a0aec0; font-size: 0.9rem;">Fecha: {{ stats.date }}</span>{% endif %}
+                {% if stats.city %}<span class="badge badge-info">{{ stats.city }}</span>{% endif %}
+            </div>
+        </div>
+        <div>
+            <a href="{{ url_for('optimize.optimize') }}?eans={{ stats.ean }}" class="btn btn-success">
+                {{ _('Ver en Optimizar Precios') }}
+            </a>
+        </div>
+    </div>
+
+    <div class="stats-grid" style="margin-top: 1.5rem;">
+        <div class="stat-card stat-min">
+            <small style="color: var(--success); text-transform: uppercase; font-size: 0.8rem; font-weight: bold;">{{ _('Precio Mínimo') }}</small>
+            <div class="stat-val" style="color: var(--success);">{{ stats.min_price | format_currency }}</div>
+            <small style="color: #a0aec0;">{{ stats.cheapest_store or '-' }}</small>
+        </div>
+        <div class="stat-card stat-ref">
+            <small style="color: var(--warning); text-transform: uppercase; font-size: 0.8rem; font-weight: bold;">{{ _('Precio de Referencia') }}</small>
+            <div class="stat-val" style="color: var(--warning);">{{ stats.reference_price | format_currency }}</div>
+            <small style="color: #a0aec0;">{{ _('Media geométrica SEPA') }}</small>
+        </div>
+        <div class="stat-card stat-max">
+            <small style="color: var(--danger); text-transform: uppercase; font-size: 0.8rem; font-weight: bold;">{{ _('Precio Máximo') }}</small>
+            <div class="stat-val" style="color: var(--danger);">{{ stats.max_price | format_currency }}</div>
+            <small style="color: #a0aec0;">{{ stats.most_expensive_store or '-' }}</small>
+        </div>
+    </div>
+
+    {% if stats.price_dispersion is not none %}
+    <div style="background: #13223f; border: 1px solid #3a506b; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
+        <div>
+            <strong>{{ _('Dispersión de Precios:') }}</strong>
+            <span class="badge {% if stats.price_dispersion > 0.3 %}badge-danger{% elif stats.price_dispersion > 0.15 %}badge-warning{% else %}badge-lowest{% endif %}">
+                {{ "%.1f"|format(stats.price_dispersion * 100) }}%
+            </span>
+        </div>
+        {% if stats.min_price and stats.max_price and stats.max_price > stats.min_price %}
+        <div style="color: var(--success); font-weight: bold;">
+            {{ _('Ahorro potencial:') }} {{ (stats.max_price - stats.min_price) | format_currency }}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <h3>{{ _('Precios por Comercio y Sucursal') }}</h3>
+    {% if stats.store_prices %}
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Comercio / Sucursal') }}</th>
+                <th>{{ _('Localidad') }}</th>
+                <th>{{ _('Precio') }}</th>
+                <th>{{ _('Precio Unitario') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for st in stats.store_prices %}
+            <tr>
+                <td>
+                    <strong>{{ st.chain_name }}</strong>
+                    {% if st.branch_name %}<br><small style="color: #a0aec0;">{{ st.branch_name }}</small>{% endif %}
+                </td>
+                <td>{{ st.city or '-' }}</td>
+                <td>
+                    <strong style="color: {% if st.price == stats.min_price %}var(--success){% elif st.price == stats.max_price %}var(--danger){% else %}var(--text){% endif %};">
+                        {{ st.price | format_currency }}
+                    </strong>
+                </td>
+                <td>
+                    {% if st.unit_price %}
+                    ${{ "%.2f"|format(st.unit_price) }} / {{ st.unit or 'u' }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #a0aec0; padding: 1rem 0;">{{ _('No hay registros de precios de comercios para este artículo en la fecha actual.') }}</p>
+    {% endif %}
+</div>
+{% endblock %}

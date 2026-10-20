@@ -1,10 +1,12 @@
 import logging
 import math
+import re
 import statistics
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
+import bcrypt
 import yaml
 
 from sur_en_precios.domain.models import (
@@ -143,7 +145,9 @@ class BasketOptimizerService:
 
         # Index prices: (store_identifier, ean) -> price
         price_lookup: Dict[Tuple[str, str], int] = {}
-        unit_price_lookup: Dict[Tuple[str, str], Tuple[Optional[float], Optional[str]]] = {}
+        unit_price_lookup: Dict[
+            Tuple[str, str], Tuple[Optional[float], Optional[str]]
+        ] = {}
 
         # Track city-wide min and max prices per product
         product_min_price: Dict[str, int] = {}
@@ -203,7 +207,9 @@ class BasketOptimizerService:
                 return price_lookup[(str(st_id), ean)]
             return None
 
-        def get_store_unit_price(st: Any, ean: str) -> Tuple[Optional[float], Optional[str]]:
+        def get_store_unit_price(
+            st: Any, ean: str
+        ) -> Tuple[Optional[float], Optional[str]]:
             st_code = getattr(st, "code", None)
             if st_code and (str(st_code), ean) in unit_price_lookup:
                 return unit_price_lookup[(str(st_code), ean)]
@@ -305,7 +311,11 @@ class BasketOptimizerService:
 
             # Check for candidate substitutions if available
             best_sub: Optional[ItemSubstitution] = None
-            if substitute_candidates_map and ean in substitute_candidates_map and cheapest_price is not None:
+            if (
+                substitute_candidates_map
+                and ean in substitute_candidates_map
+                and cheapest_price is not None
+            ):
                 candidates = substitute_candidates_map[ean]
                 for cand in candidates:
                     cand_ean = getattr(cand, "ean", str(cand))
@@ -672,3 +682,103 @@ class BasketYamlService:
             items=parsed_items,
             warnings=warnings,
         )
+
+
+COMMON_PASSWORDS_BLACKLIST = {
+    "1234567890",
+    "password123",
+    "admin12345",
+    "qwerty1234",
+    "supersecret",
+    "sur_en_precios",
+    "argentina2026",
+    "contraseña123",
+    "123456789012",
+}
+
+DUMMY_BCRYPT_HASH = "$2b$12$e8x/yX3yX3yX3yX3yX3yXeK6c459o96wE2ZJpPq7OqG7fP1lE7rTe"
+
+
+class AuthService:
+    """Domain service enforcing strict OWASP security standards for user credentials."""
+
+    @staticmethod
+    def validate_username(username: str) -> tuple[bool, str]:
+        """Validates username formatting: 3-30 chars, alphanumeric, underscores, dots, hyphens."""
+        if not username:
+            return False, "El nombre de usuario no puede estar vacío."
+        clean_user = username.strip().lower()
+        if len(clean_user) < 3:
+            return False, "El nombre de usuario debe tener al menos 3 caracteres."
+        if len(clean_user) > 30:
+            return False, "El nombre de usuario no puede superar los 30 caracteres."
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", clean_user):
+            return (
+                False,
+                "El nombre de usuario solo puede contener letras, números, puntos, guiones o guiones bajos.",
+            )
+        if clean_user.isdigit():
+            return (
+                False,
+                "El nombre de usuario no puede estar compuesto únicamente por dígitos.",
+            )
+        return True, ""
+
+    @staticmethod
+    def validate_password(password: str) -> tuple[bool, str]:
+        """Validates password strength following strict OWASP best practices.
+
+        Rules:
+          - Minimum 10 characters.
+          - Maximum 128 characters (mitigates bcrypt DoS).
+          - At least one letter and one number or special character.
+          - Not present in common password blacklist.
+        """
+        if not password:
+            return False, "La contraseña no puede estar vacía."
+        if len(password) < 10:
+            return False, "La contraseña debe tener al menos 10 caracteres."
+        if len(password) > 128:
+            return False, "La contraseña no puede superar los 128 caracteres."
+        if password.lower() in COMMON_PASSWORDS_BLACKLIST:
+            return (
+                False,
+                "La contraseña elegida es demasiado común o insegura. Elija una más robusta.",
+            )
+        has_letter = any(c.isalpha() for c in password)
+        has_digit_or_symbol = any(not c.isalpha() for c in password)
+        if not (has_letter and has_digit_or_symbol):
+            return (
+                False,
+                "La contraseña debe combinar letras con números o símbolos especiales.",
+            )
+        return True, ""
+
+    @staticmethod
+    def hash_password(password: str) -> str:
+        """Hashes password with bcrypt and work factor 12."""
+        return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(12)).decode(
+            "utf-8"
+        )
+
+    @staticmethod
+    def verify_password(password: str, password_hash: str) -> bool:
+        """Verifies password using constant-time comparison."""
+        if not password or not password_hash:
+            return False
+        try:
+            return bcrypt.checkpw(
+                password.encode("utf-8"), password_hash.encode("utf-8")
+            )
+        except Exception:
+            return False
+
+    @staticmethod
+    def dummy_verify() -> None:
+        """Executes a constant-time check to prevent timing attacks when user does not exist."""
+        try:
+            bcrypt.checkpw(
+                b"dummy_timing_protection_pass", DUMMY_BCRYPT_HASH.encode("utf-8")
+            )
+        except Exception:
+            pass

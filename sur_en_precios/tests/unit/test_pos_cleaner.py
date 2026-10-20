@@ -1,6 +1,6 @@
 """Unit and integration tests for Point of Sale (POS) cleaner module."""
 
-import pytest
+from hermes_reborn.models import Base, PointOfSale
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,6 @@ from sur_en_precios.domain.cleaner.pos_cleaner import (
     resolve_corporate_info,
     resolve_geographic_info,
 )
-from hermes_reborn.models import Base, PointOfSale
 
 
 def test_decompose_pos_code_valid():
@@ -73,7 +72,9 @@ def test_clean_address():
     assert addr2 == "20 de Febrero esq. Guemes"
 
     # Intersection and Avda.
-    addr3 = clean_address("avda. monseñor tavella y avda. ex - combatientes de malvina none")
+    addr3 = clean_address(
+        "avda. monseñor tavella y avda. ex - combatientes de malvina none"
+    )
     assert "Av. Monseñor Tavella" in addr3
     assert "none" not in addr3
 

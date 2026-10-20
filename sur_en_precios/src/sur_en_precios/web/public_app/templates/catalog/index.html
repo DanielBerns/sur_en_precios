@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ _('Buscador de Productos') }}</h2>
+    <form method="GET" action="{{ url_for('catalog.index') }}">
+        <div class="form-group">
+            <input type="text" name="q" value="{{ query }}" placeholder="{{ _('Buscar por descripción, marca o código EAN...') }}" autofocus>
+        </div>
+        <div class="mode-selector">
+            <label>
+                <input type="radio" name="mode" value="fuzzy" {% if mode != 'exact' %}checked{% endif %}>
+                {{ _('Búsqueda flexible (aproximada)') }}
+            </label>
+            <label style="margin-left: 1.5rem;">
+                <input type="radio" name="mode" value="exact" {% if mode == 'exact' %}checked{% endif %}>
+                {{ _('Búsqueda exacta') }}
+            </label>
+        </div>
+        <button type="submit">{{ _('Buscar') }}</button>
+    </form>
+</div>
+
+{% if query and products %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <h2 style="margin: 0;">{{ _('Resultados de Búsqueda') }}</h2>
+        <span style="color: #a0aec0; font-size: 0.9rem;">
+            {{ _('Mostrando %(start)s-%(end)s de %(total)s artículos encontrados', start=pagination.start_item, end=pagination.end_item, total=pagination.total_items) }}
+        </span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Código EAN') }}</th>
+                <th>{{ _('Descripción') }}</th>
+                <th>{{ _('Marca') }}</th>
+                <th>{{ _('Categoría') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in products %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('catalog.article_detail', ean=p.ean) }}" class="ean-link" onclick="openPriceStatsModal(event, '{{ p.ean }}');" title="{{ _('Ver estadísticas de precio') }}">
+                        <code>{{ p.ean }}</code> 📊
+                    </a>
+                </td>
+                <td>{{ p.name }}</td>
+                <td>{{ p.brand_name or '-' }}</td>
+                <td>{{ p.category_name or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if pagination.total_pages > 1 %}
+    <nav class="pagination" aria-label="{{ _('Paginación de resultados') }}">
+        {% if pagination.has_prev %}
+        <a href="{{ url_for('catalog.index', q=query, mode=mode, page=pagination.prev_num) }}" class="page-link">&laquo; {{ _('Anterior') }}</a>
+        {% else %}
+        <span class="page-link disabled">&laquo; {{ _('Anterior') }}</span>
+        {% endif %}
+
+        {% for p in pagination.iter_pages() %}
+            {% if p %}
+                {% if p == pagination.page %}
+                <span class="page-link active">{{ p }}</span>
+                {% else %}
+                <a href="{{ url_for('catalog.index', q=query, mode=mode, page=p) }}" class="page-link">{{ p }}</a>
+                {% endif %}
+            {% else %}
+                <span class="page-ellipsis">&hellip;</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if pagination.has_next %}
+        <a href="{{ url_for('catalog.index', q=query, mode=mode, page=pagination.next_num) }}" class="page-link">{{ _('Siguiente') }} &raquo;</a>
+        {% else %}
+        <span class="page-link disabled">{{ _('Siguiente') }} &raquo;</span>
+        {% endif %}
+    </nav>
+    {% endif %}
+</div>
+{% elif query %}
+<div class="card" style="text-align: center; padding: 2.5rem 1rem; color: #a0aec0;">
+    <p style="font-size: 1.1rem; color: var(--text);">{{ _('No se encontraron artículos para "%(query)s".', query=query) }}</p>
+    <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+        {{ _('Intente buscar por palabras clave más generales (ej: "arroz", "aceite", "leche") o verifique el código EAN.') }}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

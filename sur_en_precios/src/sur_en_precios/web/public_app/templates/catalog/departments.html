@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>{{ _('Explorar por Categoría') }}</h2>
+    <p>{{ _('Navegá por los departamentos del catálogo maestro:') }}</p>
+    <div class="grid" style="margin-top: 1.5rem;">
+        {% for dept in departments %}
+        <div class="card" style="background: #13223f; border: 1px solid #3a506b; margin-bottom: 0;">
+            <h3 style="color: var(--accent); margin-top: 0;">
+                <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" style="color: var(--accent); text-decoration: none;">
+                    {{ dept.name }}
+                </a>
+            </h3>
+            <p style="color: #a0aec0; font-size: 0.9rem;">
+                {{ dept.children|length }} {{ _('subcategorías') }}
+            </p>
+            <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" class="btn btn-sm">
+                {{ _('Ver subcategorías →') }}
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

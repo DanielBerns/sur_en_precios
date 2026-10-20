@@ -190,4 +190,3 @@ def test_basket_optimizer_unit_pricing_and_substitutions() -> None:
     assert sub.savings_amount == 250
     assert sub.savings_percent == 25.0
     assert len(result.suggested_substitutions) == 1
-

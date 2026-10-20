@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <p><a href="{{ url_for('catalog.departments') }}" style="color: var(--muted); text-decoration: none;">← {{ _('Todas las categorías') }}</a></p>
+    <h2>{{ department.name }}</h2>
+    <p>{{ _('Seleccioná una subcategoría para explorar artículos:') }}</p>
+    <div class="grid" style="margin-top: 1.5rem;">
+        {% for sub in subcategories %}
+        <div class="card" style="background: #13223f; border: 1px solid #3a506b; margin-bottom: 0;">
+            <h3 style="color: var(--accent); margin-top: 0;">
+                <a href="{{ url_for('catalog.subcategory_view', slug=sub.slug) }}" style="color: var(--accent); text-decoration: none;">
+                    {{ sub.name }}
+                </a>
+            </h3>
+            <a href="{{ url_for('catalog.subcategory_view', slug=sub.slug) }}" class="btn btn-sm">
+                {{ _('Ver productos →') }}
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

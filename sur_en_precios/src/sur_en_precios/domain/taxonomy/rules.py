@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import re
 from typing import List, Tuple
-
 
 # Classification rules: (Department, Subcategory, list of regex patterns)
 # Checked in order; the first match determines the article's category.
@@ -79,7 +77,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(whisky|whiskey|fernet|aperitivo|vodka|gin|ron|licor|licores|tequila|vermouth|vermut|gancia|campari|amargo|anivario branca)\b",
         ],
     ),
-
     # Bebé y Maternidad (checked early to catch baby diapers, wipes, and infant formula)
     (
         "Bebé y Maternidad",
@@ -95,7 +92,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(oleo calcareo|chupete|chupetes|mamadera|mamaderas|mordillo|shampoo bebe|aceite bebe|colonia bebe)\b",
         ],
     ),
-
     # Mascotas (checked early to catch dog/cat food before general meats/canned)
     (
         "Mascotas",
@@ -120,7 +116,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(shampoo para perros|pipeta|collar antipulgas|correa perro|arena para gato)\b",
         ],
     ),
-
     # Lácteos y Frescos
     (
         "Lácteos y Frescos",
@@ -164,7 +159,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(tapa(?:s)?\s+(?:para|de)\s+(?:empanada|tarta)|ravioles|noquis|ñoquis|sorrentinos|capeletis|cappellettis|fideos frescos)\b",
         ],
     ),
-
     # Carnes y Pescados
     (
         "Carnes y Pescados",
@@ -194,7 +188,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(merluza|salmon|salmón|camaron|camarones|langostino|langostinos|calamar|calamares|mejillon|mejillones|filet de merluza)\b",
         ],
     ),
-
     # Frutas y Verduras
     (
         "Frutas y Verduras",
@@ -210,7 +203,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(papa|papas|cebolla|cebollas|tomate|tomates|zanahoria|zanahorias|lechuga|acelga|espinaca|zapallo|morron|morrones|ajo|alcaucil|berenjena)\b",
         ],
     ),
-
     # Panadería y Confitería
     (
         "Panadería y Confitería",
@@ -226,7 +218,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(budin|budines|magdalena|magdalenas|medialunas|facturas|bizcochuelo|torta|pan dulce)\b",
         ],
     ),
-
     # Congelados
     (
         "Congelados",
@@ -249,7 +240,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\bcongelad[oa]s?\b",
         ],
     ),
-
     # Almacén
     (
         "Almacén",
@@ -314,7 +304,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(sal\b|sal fina|sal gruesa|pimienta|oregano|mayonesa|ketchup|mostaza|aderezo|aderezos|caldo|caldos|especias)\b",
         ],
     ),
-
     # Perfumería y Cuidado Personal
     (
         "Perfumería y Cuidado Personal",
@@ -365,7 +354,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(espuma de afeitar|maquina de afeitar|repuesto de afeitar|cera depilatoria|crema depilatoria)\b",
         ],
     ),
-
     # Limpieza
     (
         "Limpieza",
@@ -410,7 +398,6 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
             r"\b(insecticida|repelente|espirales|aromatizante|absorbe humedad|desodorante de ambiente)\b",
         ],
     ),
-
     # Electro, Bazar y Hogar
     (
         "Electro, Bazar y Hogar",
@@ -446,7 +433,10 @@ CLASSIFICATION_RULES: List[Tuple[str, str, List[str]]] = [
 # Facet tag rules to extract orthogonal attributes
 FACET_TAG_RULES: List[Tuple[str, List[str]]] = [
     ("sin tacc", [r"\b(?:sin\s+tacc|libre\s+de\s+gluten|gluten\s+free)\b"]),
-    ("diet / light", [r"\b(?:light|diet|dietetica|reducido en calorias|cero azucar|sin azucar)\b"]),
+    (
+        "diet / light",
+        [r"\b(?:light|diet|dietetica|reducido en calorias|cero azucar|sin azucar)\b"],
+    ),
     ("descremada", [r"\bdescremad[ao]s?\b"]),
     ("entera", [r"\benter[ao]s?\b"]),
     ("extra virgen", [r"\bextra\s+virgen\b"]),

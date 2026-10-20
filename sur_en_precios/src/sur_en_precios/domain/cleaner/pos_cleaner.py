@@ -48,11 +48,36 @@ RETAIL_CHAINS: Dict[Tuple[int, int], Tuple[str, Optional[str], str, str]] = {
     (10, 2): ("INC S.A.", "Carrefour Group", "Carrefour Market", "Supermercado"),
     (10, 3): ("INC S.A.", "Carrefour Group", "Carrefour Express", "Proximidad"),
     # Walmart / GDN Argentina (Grupo De Narváez)
-    (11, 1): ("GDN Argentina (ex Walmart Argentina S.R.L.)", "GDN Argentina (Grupo De Narváez)", "Hiper ChangoMás", "Hipermercado"),
-    (11, 2): ("GDN Argentina (ex Walmart Argentina S.R.L.)", "GDN Argentina (Grupo De Narváez)", "ChangoMás", "Supermercado"),
-    (11, 3): ("GDN Argentina (ex Walmart Argentina S.R.L.)", "GDN Argentina (Grupo De Narváez)", "Súper ChangoMás", "Supermercado"),
-    (11, 4): ("GDN Argentina (ex Walmart Argentina S.R.L.)", "GDN Argentina (Grupo De Narváez)", "Mi ChangoMás", "Proximidad"),
-    (11, 5): ("GDN Argentina (ex Walmart Argentina S.R.L.)", "GDN Argentina (Grupo De Narváez)", "Hiper ChangoMás (ex Walmart)", "Hipermercado"),
+    (11, 1): (
+        "GDN Argentina (ex Walmart Argentina S.R.L.)",
+        "GDN Argentina (Grupo De Narváez)",
+        "Hiper ChangoMás",
+        "Hipermercado",
+    ),
+    (11, 2): (
+        "GDN Argentina (ex Walmart Argentina S.R.L.)",
+        "GDN Argentina (Grupo De Narváez)",
+        "ChangoMás",
+        "Supermercado",
+    ),
+    (11, 3): (
+        "GDN Argentina (ex Walmart Argentina S.R.L.)",
+        "GDN Argentina (Grupo De Narváez)",
+        "Súper ChangoMás",
+        "Supermercado",
+    ),
+    (11, 4): (
+        "GDN Argentina (ex Walmart Argentina S.R.L.)",
+        "GDN Argentina (Grupo De Narváez)",
+        "Mi ChangoMás",
+        "Proximidad",
+    ),
+    (11, 5): (
+        "GDN Argentina (ex Walmart Argentina S.R.L.)",
+        "GDN Argentina (Grupo De Narváez)",
+        "Hiper ChangoMás (ex Walmart)",
+        "Hipermercado",
+    ),
     # Cencosud
     (9, 1): ("Jumbo Retail Argentina S.A.", "Cencosud", "Vea", "Supermercado"),
     (9, 2): ("Jumbo Retail Argentina S.A.", "Cencosud", "Disco", "Supermercado"),
@@ -66,76 +91,241 @@ RETAIL_CHAINS: Dict[Tuple[int, int], Tuple[str, Optional[str], str, str]] = {
     (24, 2): ("Farmacity S.A.", "Grupo Pegasus", "Farmacity", "Farmacia"),
     (24, 3): ("Farmacity S.A.", "Grupo Pegasus", "Simplicity", "Belleza y Cuidado"),
     # COTO
-    (12, 1): ("COTO C.I.C.S.A.", "COTO Centro Integral de Comercialización", "COTO", "Hipermercado"),
+    (12, 1): (
+        "COTO C.I.C.S.A.",
+        "COTO Centro Integral de Comercialización",
+        "COTO",
+        "Hipermercado",
+    ),
     # La Anónima
-    (2, 1): ("S.A. Importadora y Exportadora de la Patagonia", "La Anónima", "La Anónima", "Supermercado"),
-    (2, 2): ("S.A. Importadora y Exportadora de la Patagonia", "La Anónima", "La Anónima (ex Topsy)", "Supermercado"),
-    (2, 3): ("S.A. Importadora y Exportadora de la Patagonia", "La Anónima", "La Anónima (Bomba)", "Supermercado"),
+    (2, 1): (
+        "S.A. Importadora y Exportadora de la Patagonia",
+        "La Anónima",
+        "La Anónima",
+        "Supermercado",
+    ),
+    (2, 2): (
+        "S.A. Importadora y Exportadora de la Patagonia",
+        "La Anónima",
+        "La Anónima (ex Topsy)",
+        "Supermercado",
+    ),
+    (2, 3): (
+        "S.A. Importadora y Exportadora de la Patagonia",
+        "La Anónima",
+        "La Anónima (Bomba)",
+        "Supermercado",
+    ),
     # YPF
-    (19, 1): ("Operadora de Estaciones de Servicios S.A. (OPESSA)", "YPF S.A.", "YPF Full", "Conveniencia"),
+    (19, 1): (
+        "Operadora de Estaciones de Servicios S.A. (OPESSA)",
+        "YPF S.A.",
+        "YPF Full",
+        "Conveniencia",
+    ),
     # Cooperativa Obrera
-    (13, 1): ("Cooperativa Obrera Limitada de Consumo y Vivienda", "Cooperativa Obrera", "Cooperativa Obrera", "Supermercado"),
+    (13, 1): (
+        "Cooperativa Obrera Limitada de Consumo y Vivienda",
+        "Cooperativa Obrera",
+        "Cooperativa Obrera",
+        "Supermercado",
+    ),
     # Átomo (Millán)
     (17, 1): ("Millán S.A.", "Millán S.A.", "Átomo Supermercados", "Supermercado"),
     # Musimundo / Megatone
-    (2011, 1): ("Electrónica Megatone S.A.", "Red Megatone", "Musimundo", "Electrodomésticos"),
+    (2011, 1): (
+        "Electrónica Megatone S.A.",
+        "Red Megatone",
+        "Musimundo",
+        "Electrodomésticos",
+    ),
     (2000, 1): ("Carsa S.A.", "Red Megatone / Carsa", "Musimundo", "Electrodomésticos"),
     (2008, 1): ("Bazar Avenida S.A.", "Red Megatone", "Megatone", "Electrodomésticos"),
     # Cetrogar
     (2009, 1): ("Cetrogar S.A.", "Cetrogar", "Cetrogar", "Electrodomésticos"),
     # Frávega
-    (2002, 1): ("Frávega S.A.C.I. e I.", "Grupo Frávega", "Frávega", "Electrodomésticos"),
+    (2002, 1): (
+        "Frávega S.A.C.I. e I.",
+        "Grupo Frávega",
+        "Frávega",
+        "Electrodomésticos",
+    ),
     # Naldo
     (2005, 1): ("Naldo Lombardi S.A.", "Naldo Lombardi", "Naldo", "Electrodomésticos"),
     # Grupo Mirgor (GMRA)
     (2003, 1): ("GMRA S.A.", "Grupo Mirgor", "Samsung Store", "Tecnología y Telefonía"),
     (2003, 2): ("GMRA S.A.", "Grupo Mirgor", "Diggit", "Tecnología y Electrónica"),
-    (2003, 3): ("GMRA S.A.", "Grupo Mirgor", "Mirgor Retail", "Tecnología y Electrónica"),
+    (2003, 3): (
+        "GMRA S.A.",
+        "Grupo Mirgor",
+        "Mirgor Retail",
+        "Tecnología y Electrónica",
+    ),
     # Pan American Energy & Deheza (Axion)
-    (23, 1): ("Pan American Energy S.L. Sucursal Argentina", "Pan American Energy", "Spot! / Axion Energy", "Conveniencia"),
-    (3, 1): ("Deheza S.A.I.C.F. e I.", "Pan American Energy / Deheza", "Spot! / Axion Energy", "Conveniencia"),
+    (23, 1): (
+        "Pan American Energy S.L. Sucursal Argentina",
+        "Pan American Energy",
+        "Spot! / Axion Energy",
+        "Conveniencia",
+    ),
+    (3, 1): (
+        "Deheza S.A.I.C.F. e I.",
+        "Pan American Energy / Deheza",
+        "Spot! / Axion Energy",
+        "Conveniencia",
+    ),
     # Diarco
-    (65, 1): ("Distribuidora Mayorista de Alimentos (Diarco)", "Grupo Goldfarb", "Diarco Mayorista", "Mayorista"),
+    (65, 1): (
+        "Distribuidora Mayorista de Alimentos (Diarco)",
+        "Grupo Goldfarb",
+        "Diarco Mayorista",
+        "Mayorista",
+    ),
     # Coppel
     (2004, 1): ("Coppel S.A.", "Grupo Coppel", "Coppel", "Tienda Departamental"),
     # Libertad
-    (16, 1): ("Libertad S.A.", "Grupo Libertad", "Hipermercado Libertad", "Hipermercado"),
+    (16, 1): (
+        "Libertad S.A.",
+        "Grupo Libertad",
+        "Hipermercado Libertad",
+        "Hipermercado",
+    ),
     (16, 2): ("Libertad S.A.", "Grupo Libertad", "Mini Libertad", "Proximidad"),
     # Regional Chains
     (1, 1): ("Dinosaurio S.A.", "Grupo Dinosaurio", "Súper Mami", "Hipermercado"),
-    (4, 1): ("Estación Lima S.A.", "Estación Lima S.A.", "Estación Lima", "Conveniencia"),
-    (5, 1): ("California S.A.", "California S.A.", "California Supermercados", "Supermercado"),
+    (4, 1): (
+        "Estación Lima S.A.",
+        "Estación Lima S.A.",
+        "Estación Lima",
+        "Conveniencia",
+    ),
+    (5, 1): (
+        "California S.A.",
+        "California S.A.",
+        "California Supermercados",
+        "Supermercado",
+    ),
     (6, 1): ("Alberdi S.A.", "Alberdi S.A.", "Comodín", "Supermercado"),
     (6, 2): ("Alberdi S.A.", "Alberdi S.A.", "Maxi Comodín", "Mayorista"),
     (7, 1): ("Cyre S.A.", "Cyre S.A.", "Cordiez", "Supermercado"),
     (7, 2): ("Cyre S.A.", "Cyre S.A.", "Mercamax", "Mayorista"),
     (8, 1): ("Mariano S.A.", "Mariano Max", "Mariano Max", "Supermercado"),
-    (14, 1): ("Miguel Becerra S.A.", "Supermercados Becerra", "Supermercados Becerra", "Supermercado"),
-    (18, 1): ("Aiello Supermercados S.A.", "Aiello Supermercados", "Súper Aiello", "Supermercado"),
-    (20, 1): ("La Agrícola Regional Coop. Ltda.", "La Agrícola Regional", "LAR Supermercados", "Supermercado"),
-    (21, 1): ("Supermercados Toledo S.A.", "Supermercados Toledo", "Toledo", "Supermercado"),
-    (22, 1): ("La Gallega Supermercados S.A.", "La Gallega Supermercados", "La Gallega", "Supermercado"),
-    (25, 1): ("Autoservicio La Amistad Coop. de Trabajo Ltda.", "La Amistad Coop.", "Autoservicio La Amistad", "Supermercado"),
+    (14, 1): (
+        "Miguel Becerra S.A.",
+        "Supermercados Becerra",
+        "Supermercados Becerra",
+        "Supermercado",
+    ),
+    (18, 1): (
+        "Aiello Supermercados S.A.",
+        "Aiello Supermercados",
+        "Súper Aiello",
+        "Supermercado",
+    ),
+    (20, 1): (
+        "La Agrícola Regional Coop. Ltda.",
+        "La Agrícola Regional",
+        "LAR Supermercados",
+        "Supermercado",
+    ),
+    (21, 1): (
+        "Supermercados Toledo S.A.",
+        "Supermercados Toledo",
+        "Toledo",
+        "Supermercado",
+    ),
+    (22, 1): (
+        "La Gallega Supermercados S.A.",
+        "La Gallega Supermercados",
+        "La Gallega",
+        "Supermercado",
+    ),
+    (25, 1): (
+        "Autoservicio La Amistad Coop. de Trabajo Ltda.",
+        "La Amistad Coop.",
+        "Autoservicio La Amistad",
+        "Supermercado",
+    ),
     (29, 1): ("Josimar S.A.", "Josimar S.A.", "Josimar", "Supermercado"),
-    (35, 1): ("Asoc. Mutual Socios Coop. Agrícola Capitán Sarmiento", "Cooperativa Capitán Sarmiento", "Mucoop", "Supermercado"),
+    (35, 1): (
+        "Asoc. Mutual Socios Coop. Agrícola Capitán Sarmiento",
+        "Cooperativa Capitán Sarmiento",
+        "Mucoop",
+        "Supermercado",
+    ),
     (36, 3): ("Superclc S.A.", "Superclc", "Super CLC", "Supermercado"),
     (36, 4): ("Superclc S.A.", "Superclc", "Super CLC", "Supermercado"),
     (36, 5): ("Superclc S.A.", "Superclc", "Super CLC", "Supermercado"),
     (36, 6): ("Superclc S.A.", "Superclc", "Super CLC", "Supermercado"),
-    (44, 1): ("Supermercado El Nene S.A.", "Supermercado El Nene", "Supermercados El Nene", "Supermercado"),
-    (45, 1): ("Almacenes Pampas S.A.", "Almacenes Pampas", "Almacenes Pampas", "Supermercado"),
-    (46, 1): ("Almacenes de Marca S.A.", "Almacenes de Marca", "Almacenes de Marca", "Supermercado"),
-    (47, 1): ("Coop. Agrícola Ganadera Patagones y Viedma Ltda.", "Unicoop", "Unicoop", "Supermercado"),
+    (44, 1): (
+        "Supermercado El Nene S.A.",
+        "Supermercado El Nene",
+        "Supermercados El Nene",
+        "Supermercado",
+    ),
+    (45, 1): (
+        "Almacenes Pampas S.A.",
+        "Almacenes Pampas",
+        "Almacenes Pampas",
+        "Supermercado",
+    ),
+    (46, 1): (
+        "Almacenes de Marca S.A.",
+        "Almacenes de Marca",
+        "Almacenes de Marca",
+        "Supermercado",
+    ),
+    (47, 1): (
+        "Coop. Agrícola Ganadera Patagones y Viedma Ltda.",
+        "Unicoop",
+        "Unicoop",
+        "Supermercado",
+    ),
     (49, 1): ("Arnaldo P. Appella S.A.", "Appella S.A.", "Súper Tuti", "Supermercado"),
     (50, 1): ("Supermercado Tuti 2 S.A.", "Appella S.A.", "Súper Tuti", "Supermercado"),
-    (1000, 1): ("Frigorífico Gorina S.A.I.C.", "Frigorífico Gorina", "Gorina", "Carnicería"),
-    (1001, 1): ("Rafaela Alimentos S.A.", "Rafaela Alimentos", "Lario", "Fiambres y Embutidos"),
+    (1000, 1): (
+        "Frigorífico Gorina S.A.I.C.",
+        "Frigorífico Gorina",
+        "Gorina",
+        "Carnicería",
+    ),
+    (1001, 1): (
+        "Rafaela Alimentos S.A.",
+        "Rafaela Alimentos",
+        "Lario",
+        "Fiambres y Embutidos",
+    ),
     (1002, 1): ("Went S.A.", "Went S.A.", "Farmacias RP", "Farmacia"),
-    (2006, 1): ("Whirlpool Argentina S.R.L.", "Whirlpool Corporation", "Whirlpool Tienda Oficial", "Venta Directa"),
-    (2006, 2): ("Whirlpool Argentina S.R.L.", "Whirlpool Corporation", "Whirlpool Oficial (Marketplaces)", "Comercio Electrónico"),
-    (2007, 1): ("Sony Argentina S.A.", "Sony Group", "Sony Store", "Tecnología y Audio"),
-    (2012, 1): ("Mercado Libre S.R.L.", "Mercado Libre Inc.", "Mercado Libre", "Comercio Electrónico"),
-    (2013, 1): ("First Label S.R.L.", "Mercado Libre Inc.", "Mercado Libre", "Comercio Electrónico"),
+    (2006, 1): (
+        "Whirlpool Argentina S.R.L.",
+        "Whirlpool Corporation",
+        "Whirlpool Tienda Oficial",
+        "Venta Directa",
+    ),
+    (2006, 2): (
+        "Whirlpool Argentina S.R.L.",
+        "Whirlpool Corporation",
+        "Whirlpool Oficial (Marketplaces)",
+        "Comercio Electrónico",
+    ),
+    (2007, 1): (
+        "Sony Argentina S.A.",
+        "Sony Group",
+        "Sony Store",
+        "Tecnología y Audio",
+    ),
+    (2012, 1): (
+        "Mercado Libre S.R.L.",
+        "Mercado Libre Inc.",
+        "Mercado Libre",
+        "Comercio Electrónico",
+    ),
+    (2013, 1): (
+        "First Label S.R.L.",
+        "Mercado Libre Inc.",
+        "Mercado Libre",
+        "Comercio Electrónico",
+    ),
     (3000, 2): ("Falabella S.A.", "Grupo Falabella", "Sodimac", "Hogar y Construcción"),
 }
 
@@ -179,35 +369,108 @@ PROVINCES: Dict[str, Tuple[str, str]] = {
 
 # CABA official and popular neighborhoods
 CABA_NEIGHBORHOODS = {
-    "abasto", "agronomia", "agronomía", "almagro", "balvanera", "barracas", "barrio norte",
-    "belgrano", "boedo", "botanico", "botánico", "caballito", "chacarita", "coghlan",
-    "colegiales", "congreso", "constitucion", "constitución", "flores", "floresta",
-    "la boca", "la paternal", "las cañitas", "liniers", "mataderos", "microcentro",
-    "monte castro", "monserrat", "montserrat", "nueva pompeya", "nuñez", "núñez",
-    "once", "palermo", "palermo chico", "palermo hollywood", "palermo soho",
-    "parque avellaneda", "parque chacabuco", "parque chas", "parque patricios",
-    "puerto madero", "recoleta", "retiro", "saavedra", "san cristobal", "san cristóbal",
-    "san nicolas", "san nicolás", "san telmo", "tribunales", "velez sarsfield",
-    "vélez sársfield", "versalles", "villa crespo", "villa del parque", "villa devoto",
-    "villa gral mitre", "villa general mitre", "villa lugano", "villa luro",
-    "villa ortuzar", "villa ortúzar", "villa pueyrredon", "villa pueyrredón",
-    "villa real", "villa riachuelo", "villa santa rita", "villa soldati", "villa urquiza",
+    "abasto",
+    "agronomia",
+    "agronomía",
+    "almagro",
+    "balvanera",
+    "barracas",
+    "barrio norte",
+    "belgrano",
+    "boedo",
+    "botanico",
+    "botánico",
+    "caballito",
+    "chacarita",
+    "coghlan",
+    "colegiales",
+    "congreso",
+    "constitucion",
+    "constitución",
+    "flores",
+    "floresta",
+    "la boca",
+    "la paternal",
+    "las cañitas",
+    "liniers",
+    "mataderos",
+    "microcentro",
+    "monte castro",
+    "monserrat",
+    "montserrat",
+    "nueva pompeya",
+    "nuñez",
+    "núñez",
+    "once",
+    "palermo",
+    "palermo chico",
+    "palermo hollywood",
+    "palermo soho",
+    "parque avellaneda",
+    "parque chacabuco",
+    "parque chas",
+    "parque patricios",
+    "puerto madero",
+    "recoleta",
+    "retiro",
+    "saavedra",
+    "san cristobal",
+    "san cristóbal",
+    "san nicolas",
+    "san nicolás",
+    "san telmo",
+    "tribunales",
+    "velez sarsfield",
+    "vélez sársfield",
+    "versalles",
+    "villa crespo",
+    "villa del parque",
+    "villa devoto",
+    "villa gral mitre",
+    "villa general mitre",
+    "villa lugano",
+    "villa luro",
+    "villa ortuzar",
+    "villa ortúzar",
+    "villa pueyrredon",
+    "villa pueyrredón",
+    "villa real",
+    "villa riachuelo",
+    "villa santa rita",
+    "villa soldati",
+    "villa urquiza",
 }
 
 # Common street type abbreviations
 STREET_PREFIX_SUBS = [
     (re.compile(r"^\b(avenida|avda\.?|av\.)\b\s*", re.IGNORECASE), "Av. "),
-    (re.compile(r"^\b(bulevar|boulevard|bvda\.?|bvd\.?|bv\.?)\b\s*", re.IGNORECASE), "Bv. "),
+    (
+        re.compile(r"^\b(bulevar|boulevard|bvda\.?|bvd\.?|bv\.?)\b\s*", re.IGNORECASE),
+        "Bv. ",
+    ),
     (re.compile(r"^\b(diagonal|diag\.?)\b\s*", re.IGNORECASE), "Diag. "),
     (re.compile(r"^\b(pasaje|pje\.?)\b\s*", re.IGNORECASE), "Pje. "),
     (re.compile(r"^\b(calle|cl\.?)\b\s*", re.IGNORECASE), ""),
-    (re.compile(r"\b(ruta\s+nacional|r\.?\s*nacional|ruta\s+nac\.?|rn\.?)\b", re.IGNORECASE), "Ruta Nac."),
-    (re.compile(r"\b(ruta\s+provincial|r\.?\s*provincial|ruta\s+prov\.?|rp\.?)\b", re.IGNORECASE), "Ruta Prov."),
+    (
+        re.compile(
+            r"\b(ruta\s+nacional|r\.?\s*nacional|ruta\s+nac\.?|rn\.?)\b", re.IGNORECASE
+        ),
+        "Ruta Nac.",
+    ),
+    (
+        re.compile(
+            r"\b(ruta\s+provincial|r\.?\s*provincial|ruta\s+prov\.?|rp\.?)\b",
+            re.IGNORECASE,
+        ),
+        "Ruta Prov.",
+    ),
     (re.compile(r"\b(autovia|autopista|aut\.?)\b", re.IGNORECASE), "Aut."),
 ]
 
 
-def decompose_pos_code(code: str) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[str], Optional[str]]:
+def decompose_pos_code(
+    code: str,
+) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[str], Optional[str]]:
     """Decompose SEPA code string into numeric IDs, slug, and canonical sepa_id.
 
     Format: '(comercio_id-bandera_id-sucursal_id)(bandera_slug)'
@@ -266,18 +529,38 @@ def clean_address(address: Optional[str]) -> str:
 
     # 2. Standardize prefixes at start of string
     addr = re.sub(r"^(avenida|avda\.?|av\.)\s*", "Av. ", addr, flags=re.IGNORECASE)
-    addr = re.sub(r"^(bulevar|boulevard|bvda\.?|bvd\.?|bv\.?)\s*", "Bv. ", addr, flags=re.IGNORECASE)
+    addr = re.sub(
+        r"^(bulevar|boulevard|bvda\.?|bvd\.?|bv\.?)\s*",
+        "Bv. ",
+        addr,
+        flags=re.IGNORECASE,
+    )
     addr = re.sub(r"^(diagonal|diag\.?)\s*", "Diag. ", addr, flags=re.IGNORECASE)
     addr = re.sub(r"^(pasaje|pje\.?)\s*", "Pje. ", addr, flags=re.IGNORECASE)
     addr = re.sub(r"^(calle|cl\.?)\s*", "", addr, flags=re.IGNORECASE)
 
     # Within string
     addr = re.sub(r"\s+(avenida|avda\.?|av\.)\s+", " Av. ", addr, flags=re.IGNORECASE)
-    addr = re.sub(r"\s+(bulevar|boulevard|bvda\.?|bvd\.?|bv\.?)\s+", " Bv. ", addr, flags=re.IGNORECASE)
+    addr = re.sub(
+        r"\s+(bulevar|boulevard|bvda\.?|bvd\.?|bv\.?)\s+",
+        " Bv. ",
+        addr,
+        flags=re.IGNORECASE,
+    )
     addr = re.sub(r"\s+(esquina|esq\.?)\s+", " esq. ", addr, flags=re.IGNORECASE)
     addr = re.sub(r"\s+(entre|e/)\s+", " entre ", addr, flags=re.IGNORECASE)
-    addr = re.sub(r"\b(ruta\s+nacional|r\.?\s*nacional|ruta\s+nac\.?|rn\.?)\b", "Ruta Nac.", addr, flags=re.IGNORECASE)
-    addr = re.sub(r"\b(ruta\s+provincial|r\.?\s*provincial|ruta\s+prov\.?|rp\.?)\b", "Ruta Prov.", addr, flags=re.IGNORECASE)
+    addr = re.sub(
+        r"\b(ruta\s+nacional|r\.?\s*nacional|ruta\s+nac\.?|rn\.?)\b",
+        "Ruta Nac.",
+        addr,
+        flags=re.IGNORECASE,
+    )
+    addr = re.sub(
+        r"\b(ruta\s+provincial|r\.?\s*provincial|ruta\s+prov\.?|rp\.?)\b",
+        "Ruta Prov.",
+        addr,
+        flags=re.IGNORECASE,
+    )
     addr = re.sub(r"\b(autovia|autopista|aut\.?)\b", "Aut.", addr, flags=re.IGNORECASE)
     addr = re.sub(r"\b(km\.?|k)\s*(\d+)", r"Km. \2", addr, flags=re.IGNORECASE)
     addr = re.sub(r"\b(sin\s+numero|s/n\.?)\b", "S/N", addr, flags=re.IGNORECASE)
@@ -299,7 +582,12 @@ def clean_address(address: Optional[str]) -> str:
             formatted_words.append(w.upper())
         elif re.match(r"^\d+[a-zA-Z]?$", w):
             formatted_words.append(w)
-        elif w.startswith("Av.") or w.startswith("Bv.") or w.startswith("Diag.") or w.startswith("Pje."):
+        elif (
+            w.startswith("Av.")
+            or w.startswith("Bv.")
+            or w.startswith("Diag.")
+            or w.startswith("Pje.")
+        ):
             formatted_words.append(w)
         else:
             formatted_words.append(w.capitalize())
@@ -347,7 +635,12 @@ def clean_branch(branch: Optional[str], brand_name: str = "") -> str:
     br = re.sub(r"\s*\(cap\)$", "", br, flags=re.IGNORECASE)
 
     # 2. Strip internal province prefixes: 'mdza - ', 'cdba - ', 'salt - ', 'safe - ', 'sfe. '
-    br = re.sub(r"^(mdza|cdba|cba|salt|safe|sfe\.?|tuc|juj|ctes|mis|er|chc)\s*[-–]\s*", "", br, flags=re.IGNORECASE)
+    br = re.sub(
+        r"^(mdza|cdba|cba|salt|safe|sfe\.?|tuc|juj|ctes|mis|er|chc)\s*[-–]\s*",
+        "",
+        br,
+        flags=re.IGNORECASE,
+    )
 
     # 3. Strip 'sm \d+ ' prefix or trailing '-m!' suffix
     br = re.sub(r"^sm\s*\d+\s*", "", br, flags=re.IGNORECASE)
@@ -419,20 +712,50 @@ def resolve_geographic_info(
         elif "mendoza" in branch_str or "ayacucho 401" in addr_str:
             state_str = "mendoza"
             city_str = "mendoza"
-        elif any(k in branch_str or k in addr_str for k in [
-            "cabildo", "constituyentes", "beiro", "gaona", "once", "rivadavia",
-            "azurduy", "dorrego", "olivera", "nicaragua", "velez sarsfield", "caballito"
-        ]):
+        elif any(
+            k in branch_str or k in addr_str
+            for k in [
+                "cabildo",
+                "constituyentes",
+                "beiro",
+                "gaona",
+                "once",
+                "rivadavia",
+                "azurduy",
+                "dorrego",
+                "olivera",
+                "nicaragua",
+                "velez sarsfield",
+                "caballito",
+            ]
+        ):
             state_str = "caba"
             city_str = "caba"
-        elif any(k in branch_str or k in addr_str for k in [
-            "sabattini", "caraffa", "valle mall", "rivera indarte", "poeta lugones",
-            "hiperconstruccion", "barranquitas", "jacinto rios", "octavio pinto",
-            "rondeau", "sagrada familia", "derqui", "nueva cordoba", "ambrosio olmos"
-        ]):
+        elif any(
+            k in branch_str or k in addr_str
+            for k in [
+                "sabattini",
+                "caraffa",
+                "valle mall",
+                "rivera indarte",
+                "poeta lugones",
+                "hiperconstruccion",
+                "barranquitas",
+                "jacinto rios",
+                "octavio pinto",
+                "rondeau",
+                "sagrada familia",
+                "derqui",
+                "nueva cordoba",
+                "ambrosio olmos",
+            ]
+        ):
             state_str = "cordoba"
             city_str = "córdoba"
-        elif any(k in branch_str or k in addr_str for k in ["zonda", "juan b justo", "dovir", "someca"]):
+        elif any(
+            k in branch_str or k in addr_str
+            for k in ["zonda", "juan b justo", "dovir", "someca"]
+        ):
             if "zonda" in branch_str:
                 state_str = "san juan"
                 city_str = "san juan"
@@ -460,7 +783,9 @@ def resolve_geographic_info(
             city_str = "salta"
         elif "quilmes" in branch_str or "calchaqui" in addr_str:
             city_str = "quilmes"
-        elif "once" in city_str or "balvanera" in branch_str or "pueyrredon" in addr_str:
+        elif (
+            "once" in city_str or "balvanera" in branch_str or "pueyrredon" in addr_str
+        ):
             city_str = "caba"
             state_str = "caba"
         elif "rawson" in branch_str or "rawson" in city_str:
@@ -474,13 +799,32 @@ def resolve_geographic_info(
 
     # Case E: CABA detection -> standardize to 'Ciudad Autónoma de Buenos Aires'
     is_caba = (
-        state_str in {"caba", "capital federal", "ciudad autonoma de buenos aires", "ciudad autónoma de buenos aires"}
+        state_str
+        in {
+            "caba",
+            "capital federal",
+            "ciudad autonoma de buenos aires",
+            "ciudad autónoma de buenos aires",
+        }
         or city_str in CABA_NEIGHBORHOODS
-        or city_str in {
-            "caba", "capital federal", "ciudad autonoma de buenos aires",
-            "ciudad autónoma de buenos aires", "ciudad autonoma buenos aires",
-            "ciudad aut. bs.as", "cdad. de bs.as", "cap. fed.", "capital  federal",
-            "devoto", "flores sur", "lugano", "paternal", "pompeya", "v illa lugano", "cabildo avda"
+        or city_str
+        in {
+            "caba",
+            "capital federal",
+            "ciudad autonoma de buenos aires",
+            "ciudad autónoma de buenos aires",
+            "ciudad autonoma buenos aires",
+            "ciudad aut. bs.as",
+            "cdad. de bs.as",
+            "cap. fed.",
+            "capital  federal",
+            "devoto",
+            "flores sur",
+            "lugano",
+            "paternal",
+            "pompeya",
+            "v illa lugano",
+            "cabildo avda",
         }
     )
 
@@ -489,7 +833,12 @@ def resolve_geographic_info(
         state_str = "caba"
     else:
         # Non-CABA: clean city string and apply accents
-        city_clean = re.sub(r"[-–]\s*(sta\.?\s*cruz|cba|bs\.?\s*as\.?)$", "", city_str, flags=re.IGNORECASE)
+        city_clean = re.sub(
+            r"[-–]\s*(sta\.?\s*cruz|cba|bs\.?\s*as\.?)$",
+            "",
+            city_str,
+            flags=re.IGNORECASE,
+        )
         city_clean = re.sub(r"\(.*\)", "", city_clean).strip()
         city_lower = city_clean.lower()
         if city_lower in LOCALITY_ACCENTS:

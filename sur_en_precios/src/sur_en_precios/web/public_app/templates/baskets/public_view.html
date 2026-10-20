@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="margin-bottom: 1rem;">
+    <a href="{{ url_for('baskets.baskets') }}" style="color: var(--accent); text-decoration: none;">&larr; {{ _('Ir a Mis Canastas') }}</a>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>{{ _('Canasta Compartida') }}: {{ basket.name }}</h2>
+            <span class="badge badge-public">{{ _('Canasta Pública') }}</span>
+            <div style="margin-top: 0.5rem;">
+                <strong>UUID:</strong> <code>{{ basket.uuid }}</code>
+            </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyText('{{ basket.uuid }}', this)">{{ _('Copiar UUID') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyText(window.location.href, this)">{{ _('Copiar Enlace') }}</button>
+            <a href="{{ url_for('baskets.export_public_basket', uuid_str=basket.uuid) }}" class="btn btn-secondary btn-sm">{{ _('Descargar YAML') }}</a>
+            <a href="{{ url_for('optimize.optimize', public_uuid=basket.uuid) }}" class="btn btn-success btn-sm">{{ _('Optimizar Precios') }}</a>
+            <form method="POST" action="{{ url_for('baskets.clone_public_basket', uuid_str=basket.uuid) }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm">{{ _('Guardar en Mis Canastas') }}</button>
+            </form>
+
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>{{ _('Artículos de la Canasta') }} ({{ items_data|length }})</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ _('Código EAN') }}</th>
+                <th>{{ _('Descripción') }}</th>
+                <th>{{ _('Marca') }}</th>
+                <th>{{ _('Categoría') }}</th>
+                <th>{{ _('Cantidad') }}</th>
+                <th>{{ _('Proporción') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for it in items_data %}
+            <tr>
+                <td><code>{{ it.ean }}</code></td>
+                <td><strong>{{ it.name }}</strong></td>
+                <td>{{ it.brand or '-' }}</td>
+                <td>{{ it.category or '-' }}</td>
+                <td>{{ it.quantity }}</td>
+                <td>{{ it.numerator }}/{{ it.denominator }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

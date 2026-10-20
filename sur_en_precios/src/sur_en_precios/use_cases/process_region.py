@@ -7,22 +7,22 @@ import logging
 import shutil
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, joinedload
 
-
 from sur_en_precios.adapters.database.repositories import (
     SqlAlchemyCatalogRepository,
     SqlAlchemyPriceRepository,
 )
-from sur_en_precios.adapters.database.seeder import DEFAULT_HERMES_DB_PATH, seed_master_catalog
+from sur_en_precios.adapters.database.seeder import (
+    DEFAULT_HERMES_DB_PATH,
+    seed_master_catalog,
+)
 from sur_en_precios.adapters.sepa_archive import SepaArchiveError, ZipSepaDatasetAdapter
 from sur_en_precios.domain.cleaner.article_cleaner import ArticleCleaner
-from sur_en_precios.domain.cleaner.brand_cleaner import BrandLexicon
-from sur_en_precios.domain.cleaner.pos_cleaner import clean_point_of_sale_record
 from sur_en_precios.domain.models_public import (
     Article,
     Category,
@@ -35,10 +35,8 @@ from sur_en_precios.domain.models_public import (
 from sur_en_precios.domain.normalizers import (
     decode_region_code,
     normalize_branch_name,
-    normalize_brand,
     normalize_chain_name,
     normalize_city,
-    normalize_description,
 )
 from sur_en_precios.domain.ports import SepaDatasetPort
 from sur_en_precios.domain.services import PriceMetricsCalculator
@@ -116,23 +114,33 @@ class ProcessAndPublishRegionUseCase:
             with Session(engine) as session:
                 has_articles = session.scalar(select(Article.id).limit(1)) is not None
                 if not has_articles and self._master_db_path.exists():
-                    self._logger.info("Seeding master catalog from %s", self._master_db_path)
+                    self._logger.info(
+                        "Seeding master catalog from %s", self._master_db_path
+                    )
                     seed_master_catalog(output_db_path, self._master_db_path)
 
             # Load in-memory caches of known articles and categories
-            known_articles: Dict[str, Tuple[Optional[float], Optional[str], Optional[int]]] = {}
+            known_articles: Dict[
+                str, Tuple[Optional[float], Optional[str], Optional[int]]
+            ] = {}
             category_map: Dict[Tuple[str, str], int] = {}
 
             with Session(engine) as session:
                 for a_ean, a_amt, a_unit, a_cat_id in session.execute(
-                    select(Article.ean, Article.package_amount, Article.package_unit, Article.category_id)
+                    select(
+                        Article.ean,
+                        Article.package_amount,
+                        Article.package_unit,
+                        Article.category_id,
+                    )
                 ).all():
                     known_articles[a_ean] = (a_amt, a_unit, a_cat_id)
 
                 for cat in session.execute(
-                    select(Category).where(Category.level == 2).options(joinedload(Category.parent))
+                    select(Category)
+                    .where(Category.level == 2)
+                    .options(joinedload(Category.parent))
                 ).scalars():
-
                     parent_name = cat.parent.name if cat.parent else "Almacén"
                     category_map[(parent_name, cat.name)] = cat.id
 
@@ -169,12 +177,19 @@ class ProcessAndPublishRegionUseCase:
                             chain_archive, "comercio.csv", chain_temp
                         )
                         if comercio_csv.exists():
-                            with open(comercio_csv, mode="r", encoding="utf-8-sig", errors="replace") as f:
+                            with open(
+                                comercio_csv,
+                                mode="r",
+                                encoding="utf-8-sig",
+                                errors="replace",
+                            ) as f:
                                 reader = csv.DictReader(f, delimiter="|")
                                 for row in reader:
                                     ic = (row.get("id_comercio") or "").strip()
                                     ib = (row.get("id_bandera") or "").strip()
-                                    bn = (row.get("comercio_bandera_nombre") or "").strip()
+                                    bn = (
+                                        row.get("comercio_bandera_nombre") or ""
+                                    ).strip()
                                     if ic and ib:
                                         comercio_map[(ic, ib)] = bn
                     except (FileNotFoundError, SepaArchiveError):
@@ -184,11 +199,18 @@ class ProcessAndPublishRegionUseCase:
                     chain_stores: List[PointOfSale] = []
                     valid_chain_store_ids: Set[Tuple[str, str, str]] = set()
 
-                    with open(sucursales_csv, mode="r", encoding="utf-8-sig", errors="replace") as f:
+                    with open(
+                        sucursales_csv, mode="r", encoding="utf-8-sig", errors="replace"
+                    ) as f:
                         reader = csv.DictReader(f, delimiter="|")
                         for row in reader:
-                            prov = (row.get("sucursales_provincia") or "").strip().upper()
-                            if self._target_region.upper() != "ALL" and prov != self._target_region.upper():
+                            prov = (
+                                (row.get("sucursales_provincia") or "").strip().upper()
+                            )
+                            if (
+                                self._target_region.upper() != "ALL"
+                                and prov != self._target_region.upper()
+                            ):
                                 continue
 
                             ic = (row.get("id_comercio") or "").strip()
@@ -202,18 +224,28 @@ class ProcessAndPublishRegionUseCase:
 
                             c_name = comercio_map.get((ic, ib)) or "Supermercado"
                             s_name = row.get("sucursales_nombre") or "Sucursal"
-                            city = normalize_city(row.get("sucursales_localidad") or "General")
+                            city = normalize_city(
+                                row.get("sucursales_localidad") or "General"
+                            )
                             calle = (row.get("sucursales_calle") or "").strip()
                             num = (row.get("sucursales_numero") or "").strip()
                             addr = f"{calle} {num}".strip() or None
 
                             try:
-                                lat = float(row.get("sucursales_latitud", "")) if row.get("sucursales_latitud") else None
+                                lat = (
+                                    float(row.get("sucursales_latitud", ""))
+                                    if row.get("sucursales_latitud")
+                                    else None
+                                )
                             except ValueError:
                                 lat = None
 
                             try:
-                                lon = float(row.get("sucursales_longitud", "")) if row.get("sucursales_longitud") else None
+                                lon = (
+                                    float(row.get("sucursales_longitud", ""))
+                                    if row.get("sucursales_longitud")
+                                    else None
+                                )
                             except ValueError:
                                 lon = None
 
@@ -250,7 +282,9 @@ class ProcessAndPublishRegionUseCase:
 
                     seen_chain_prices: Set[Tuple[str, str]] = set()
 
-                    with open(productos_csv, mode="r", encoding="utf-8-sig", errors="replace") as f:
+                    with open(
+                        productos_csv, mode="r", encoding="utf-8-sig", errors="replace"
+                    ) as f:
                         reader = csv.DictReader(f, delimiter="|")
                         for row in reader:
                             ic = (row.get("id_comercio") or "").strip()
@@ -284,7 +318,9 @@ class ProcessAndPublishRegionUseCase:
                             clean_pkg_unit: Optional[str] = None
 
                             if ean_str in known_articles:
-                                clean_pkg_amt, clean_pkg_unit, _ = known_articles[ean_str]
+                                clean_pkg_amt, clean_pkg_unit, _ = known_articles[
+                                    ean_str
+                                ]
                             else:
                                 # Novel / unseen product: execute Cleaner & Classifier
                                 raw_desc = row.get("productos_descripcion", "")
@@ -298,8 +334,15 @@ class ProcessAndPublishRegionUseCase:
                                     raw_package=raw_pkg,
                                 )
 
-                                classification = self._taxonomy_classifier.classify(cleaned)
-                                cat_id = category_map.get((classification.department, classification.subcategory))
+                                classification = self._taxonomy_classifier.classify(
+                                    cleaned
+                                )
+                                cat_id = category_map.get(
+                                    (
+                                        classification.department,
+                                        classification.subcategory,
+                                    )
+                                )
 
                                 is_unclassified = (
                                     classification.department == "Almacén"
@@ -368,7 +411,9 @@ class ProcessAndPublishRegionUseCase:
 
                 except (SepaArchiveError, FileNotFoundError) as exc:
                     self._logger.warning(
-                        "Skipping chain archive due to error: %s (%s)", chain_archive, exc
+                        "Skipping chain archive due to error: %s (%s)",
+                        chain_archive,
+                        exc,
                     )
                 finally:
                     if chain_temp.exists():
@@ -401,16 +446,18 @@ class ProcessAndPublishRegionUseCase:
                     for s in unique_staging:
                         stmt = (
                             sqlite_insert(UnreviewedArticle)
-                            .values([
-                                {
-                                    "ean": s.ean,
-                                    "raw_description": s.raw_description,
-                                    "suggested_brand": s.suggested_brand,
-                                    "suggested_package": s.suggested_package,
-                                    "suggested_category_id": s.suggested_category_id,
-                                    "reason": s.reason,
-                                }
-                            ])
+                            .values(
+                                [
+                                    {
+                                        "ean": s.ean,
+                                        "raw_description": s.raw_description,
+                                        "suggested_brand": s.suggested_brand,
+                                        "suggested_package": s.suggested_package,
+                                        "suggested_category_id": s.suggested_category_id,
+                                        "reason": s.reason,
+                                    }
+                                ]
+                            )
                             .on_conflict_do_nothing(index_elements=["ean"])
                         )
                         session.execute(stmt)

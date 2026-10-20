@@ -141,9 +141,21 @@ def test_sepa_archive_harvest_and_etl_pipeline(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{db_path}")
     with Session(engine) as session:
         # Should contain 2 stores in AR-U (1-1-100 and 2-1-100), store 2-1-200 (AR-C) excluded
-        s1 = session.execute(select(Store).where(Store.code == "1-1-100")).scalars().first()
-        s2 = session.execute(select(Store).where(Store.code == "2-1-100")).scalars().first()
-        s3 = session.execute(select(Store).where(Store.code == "2-1-200")).scalars().first()
+        s1 = (
+            session.execute(select(Store).where(Store.code == "1-1-100"))
+            .scalars()
+            .first()
+        )
+        s2 = (
+            session.execute(select(Store).where(Store.code == "2-1-100"))
+            .scalars()
+            .first()
+        )
+        s3 = (
+            session.execute(select(Store).where(Store.code == "2-1-200"))
+            .scalars()
+            .first()
+        )
         assert s1 is not None
         assert s2 is not None
         assert s3 is None
@@ -151,7 +163,9 @@ def test_sepa_archive_harvest_and_etl_pipeline(tmp_path: Path) -> None:
         assert s2.chain_name == "La Anonima"
 
         product = (
-            session.execute(select(ArticleNumber).where(ArticleNumber.ean == "779001001"))
+            session.execute(
+                select(ArticleNumber).where(ArticleNumber.ean == "779001001")
+            )
             .scalars()
             .first()
         )

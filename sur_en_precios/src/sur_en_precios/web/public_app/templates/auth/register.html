@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Crear Cuenta — Sur en Precios{% endblock %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 2rem auto;">
+    <div class="card">
+        <h2 style="color: var(--accent); margin-top: 0; text-align: center;">Crear Cuenta de Usuario</h2>
+        <p style="color: #a0aec0; font-size: 0.9rem; text-align: center; margin-bottom: 1.5rem;">
+            Regístrese para crear, guardar y optimizar sus canastas de compras en supermercados.
+        </p>
+
+        <!-- Zero-Recovery Warning Box -->
+        <div style="background: rgba(230, 57, 70, 0.15); border: 1px solid var(--danger); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                <span style="font-size: 1.5rem;">⚠️</span>
+                <div>
+                    <strong style="color: var(--danger); display: block; margin-bottom: 0.25rem;">
+                        Aviso de Seguridad: Sin Recuperación de Credenciales
+                    </strong>
+                    <p style="font-size: 0.85rem; color: var(--text); margin: 0; line-height: 1.4;">
+                        Este portal no almacena correos ni números telefónicos para proteger su privacidad. 
+                        <strong>El usuario y la contraseña no pueden ser recuperados ni restablecidos</strong> si los olvida. 
+                        Por favor, guarde sus datos en un gestor de contraseñas seguro.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ url_for('auth.register') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="username" style="display: block; margin-bottom: 0.4rem; font-weight: bold;">
+                    Nombre de Usuario
+                </label>
+                <input type="text" id="username" name="username" value="{{ username }}" required autocomplete="username" placeholder="ej. consumidor_activo">
+                <small style="color: #a0aec0; font-size: 0.8rem; display: block; margin-top: 0.25rem;">
+                    Entre 3 y 30 caracteres. Solo letras, números, puntos o guiones.
+                </small>
+            </div>
+
+            <div class="form-group" style="margin-top: 1.25rem;">
+                <label for="password" style="display: block; margin-bottom: 0.4rem; font-weight: bold;">
+                    Contraseña
+                </label>
+                <input type="password" id="password" name="password" required autocomplete="new-password" placeholder="Mínimo 10 caracteres">
+                <small style="color: #a0aec0; font-size: 0.8rem; display: block; margin-top: 0.25rem;">
+                    Mínimo 10 caracteres, combinando letras con números o símbolos.
+                </small>
+            </div>
+
+            <div class="form-group" style="margin-top: 1.25rem;">
+                <label for="confirm_password" style="display: block; margin-bottom: 0.4rem; font-weight: bold;">
+                    Confirmar Contraseña
+                </label>
+                <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="Repita la contraseña">
+            </div>
+
+            <!-- Mandatory Disclaimer Checkbox -->
+            <div style="margin-top: 1.5rem; background: #13223f; border: 1px solid #3a506b; border-radius: 6px; padding: 0.85rem;">
+                <label style="display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer; font-size: 0.85rem; line-height: 1.35;">
+                    <input type="checkbox" name="disclaimer_ack" required style="margin-top: 2px;">
+                    <span>
+                        Entiendo y acepto que <strong>no es posible recuperar mi usuario ni mi contraseña</strong> en caso de olvido o extravío.
+                    </span>
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-success" style="width: 100%; margin-top: 1.5rem; padding: 0.75rem;">
+                Registrar Cuenta
+            </button>
+        </form>
+
+        <div style="margin-top: 1.5rem; text-align: center; border-top: 1px solid #3a506b; padding-top: 1rem; font-size: 0.9rem;">
+            <span>¿Ya tienes una cuenta creada?</span>
+            <a href="{{ url_for('auth.login') }}" style="color: var(--accent); margin-left: 0.4rem; font-weight: bold;">Iniciar Sesión</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
