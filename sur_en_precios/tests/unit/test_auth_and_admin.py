@@ -114,6 +114,7 @@ class TestAuthAndAdminWebEndpoints:
         workdir = tmp_path / "web_auth_workdir"
         app = create_public_app(workdir=workdir)
         app.config["TESTING"] = False  # Real auth enforcement mode
+        app.config["CSRF_ENABLED"] = False
         client = app.test_client()
         return app, client, workdir
 
@@ -322,3 +323,29 @@ class TestAuthAndAdminWebEndpoints:
         # 5. POST to /admin/system is forbidden (405 Method Not Allowed)
         res_post = client.post("/admin/system")
         assert res_post.status_code == 405
+
+    def test_security_headers_injected(self, app_and_client):
+        """Verifies that all responses include OWASP security hardening headers."""
+        _, client, _ = app_and_client
+        res = client.get("/")
+        assert res.headers.get("X-Frame-Options") == "SAMEORIGIN"
+        assert res.headers.get("X-Content-Type-Options") == "nosniff"
+        assert res.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+        assert "max-age=" in res.headers.get("Strict-Transport-Security", "")
+
+    def test_csrf_protection_enforces_400_on_unsafe_methods(self, app_and_client):
+        """Verifies that unsafe HTTP requests without CSRF token are blocked with 400."""
+        app, client, _ = app_and_client
+        app.config["CSRF_ENABLED"] = True
+
+        # POST without CSRF token must fail with 400
+        res = client.post(
+            "/auth/register",
+            data={"username": "test_attacker", "password": "Password123!"},
+        )
+        assert res.status_code == 400
+        assert "Token CSRF" in res.get_data(as_text=True)
+
+        # GET request must pass unaffected
+        res_get = client.get("/auth/register")
+        assert res_get.status_code == 200

@@ -394,21 +394,55 @@
         data.forEach(item => {
             const card = document.createElement('div');
             card.className = 'result-card';
-            const safeName = (item.name || '').replace(/'/g, "\\'");
-            const safeBrand = (item.brand || '').replace(/'/g, "\\'");
-            const safeCat = (item.category || '').replace(/'/g, "\\'");
 
-            card.innerHTML = `
-                <div style="flex: 1; padding-right: 0.5rem;">
-                    <div style="font-weight: bold; font-size: 0.95rem;">${item.name}</div>
-                    <div style="font-size: 0.8rem; color: #a0aec0; margin-top: 2px;">
-                        <span>${item.brand || '-'}</span> | <span>${item.category || '-'}</span> | <a href="/article/${encodeURIComponent(item.ean)}" class="ean-link" onclick="openPriceStatsModal(event, '${item.ean}')" style="padding: 0;"><code>${item.ean}</code> 📊</a>
-                    </div>
-                </div>
-                <div>
-                    <button type="button" class="btn btn-sm btn-success" onclick="addItemToBasket('${item.ean}', '${safeName}', '${safeBrand}', '${safeCat}')">+ Agregar</button>
-                </div>
-            `;
+            const infoDiv = document.createElement('div');
+            infoDiv.style.flex = '1';
+            infoDiv.style.paddingRight = '0.5rem';
+
+            const titleDiv = document.createElement('div');
+            titleDiv.style.fontWeight = 'bold';
+            titleDiv.style.fontSize = '0.95rem';
+            titleDiv.textContent = item.name || '';
+
+            const subDiv = document.createElement('div');
+            subDiv.style.fontSize = '0.8rem';
+            subDiv.style.color = '#a0aec0';
+            subDiv.style.marginTop = '2px';
+
+            const brandSpan = document.createElement('span');
+            brandSpan.textContent = item.brand || '-';
+
+            const catSpan = document.createElement('span');
+            catSpan.textContent = item.category || '-';
+
+            const eanLink = document.createElement('a');
+            eanLink.href = '/article/' + encodeURIComponent(item.ean);
+            eanLink.className = 'ean-link';
+            eanLink.style.padding = '0';
+            eanLink.onclick = function(e) { openPriceStatsModal(e, item.ean); };
+            eanLink.innerHTML = `<code>${item.ean}</code> 📊`;
+
+            subDiv.appendChild(brandSpan);
+            subDiv.appendChild(document.createTextNode(' | '));
+            subDiv.appendChild(catSpan);
+            subDiv.appendChild(document.createTextNode(' | '));
+            subDiv.appendChild(eanLink);
+
+            infoDiv.appendChild(titleDiv);
+            infoDiv.appendChild(subDiv);
+
+            const btnDiv = document.createElement('div');
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn btn-sm btn-success';
+            addBtn.textContent = '+ Agregar';
+            addBtn.addEventListener('click', () => {
+                addItemToBasket(item.ean, item.name || '', item.brand || '', item.category || '');
+            });
+            btnDiv.appendChild(addBtn);
+
+            card.appendChild(infoDiv);
+            card.appendChild(btnDiv);
             container.appendChild(card);
         });
     }

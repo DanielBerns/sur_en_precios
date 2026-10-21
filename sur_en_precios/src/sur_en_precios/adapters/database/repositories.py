@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.orm import Session, aliased, joinedload, selectinload
+from sqlalchemy.orm import Session, aliased, joinedload, noload, selectinload
 
 from sur_en_precios.domain.cleaner.text_utils import (
     slugify,
@@ -527,7 +527,7 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             select(Category)
             .where(Category.level == 1)
             .order_by(Category.name)
-            .options(joinedload(Category.children))
+            .options(joinedload(Category.children), noload(Category.articles))
         )
         return list(self._session.execute(stmt).scalars().unique().all())
 

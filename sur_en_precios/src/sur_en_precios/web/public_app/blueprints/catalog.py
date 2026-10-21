@@ -1,6 +1,14 @@
 import logging
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_babel import gettext as _
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -10,6 +18,8 @@ from sur_en_precios.web.public_app.database import (
     get_catalog_repository,
     get_price_repository,
     get_public_session,
+    get_user_repository,
+    get_user_session,
 )
 from sur_en_precios.web.public_app.schemas import (
     ArticlePriceStatsQuery,
@@ -209,8 +219,18 @@ def article_detail(ean: str):
         city=request.args.get("city"), date_str=request.args.get("date")
     )
     try:
-        with get_public_session() as session:
-            price_repo = get_price_repository(session)
+        user_baskets = []
+        user_id = session.get("user_id")
+        if user_id:
+            try:
+                with get_user_session() as u_session:
+                    user_repo = get_user_repository(u_session)
+                    user_baskets = user_repo.get_user_baskets(user_id=user_id)
+            except Exception as e:
+                logger.error("Error fetching user baskets for article detail: %s", e)
+
+        with get_public_session() as pub_session:
+            price_repo = get_price_repository(pub_session)
             stats = price_repo.get_article_price_stats(
                 ean=ean, city=query.city, price_date=query.date
             )
@@ -221,6 +241,7 @@ def article_detail(ean: str):
             return render_template(
                 "catalog/article_detail.html",
                 stats=stats,
+                user_baskets=user_baskets,
             )
     except Exception as exc:
         logger.error("Error loading article detail for ean %s: %s", ean, exc)

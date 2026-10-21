@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, abort, request
 from flask_babel import Babel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -21,6 +21,7 @@ from sur_en_precios.web.public_app.database import init_user_db
 from sur_en_precios.web.public_app.security import (
     generate_csrf_token,
     get_current_user,
+    validate_csrf,
 )
 
 logger = logging.getLogger("sur_en_precios.public_app")
@@ -91,6 +92,22 @@ def create_public_app(workdir: Path | None = None) -> Flask:
     app.extensions["user_session_factory"] = user_session_factory
 
     Babel(app, locale_selector=get_locale)
+
+    @app.before_request
+    def enforce_csrf_protection():
+        if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+            if not validate_csrf():
+                abort(400, description="Token CSRF inválido o expirado.")
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        return response
 
     @app.context_processor
     def inject_security_context():

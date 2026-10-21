@@ -88,7 +88,7 @@ class Category(PublicBase):
     articles: Mapped[List[Article]] = relationship(
         "Article",
         back_populates="category",
-        lazy="selectin",
+        lazy="select",
     )
 
     def __init__(self, **kwargs: Any) -> None:

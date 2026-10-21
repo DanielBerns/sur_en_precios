@@ -47,6 +47,10 @@ def generate_csrf_token() -> str:
 
 def validate_csrf() -> bool:
     """Validates submitted CSRF token against session."""
+    if not current_app.config.get("CSRF_ENABLED", True) or current_app.config.get(
+        "TESTING"
+    ):
+        return True
     session_token = session.get("_csrf_token")
     if not session_token:
         return False

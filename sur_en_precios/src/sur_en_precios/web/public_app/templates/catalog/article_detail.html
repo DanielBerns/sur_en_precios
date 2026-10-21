@@ -19,7 +19,19 @@
                 {% if stats.city %}<span class="badge badge-info">{{ stats.city }}</span>{% endif %}
             </div>
         </div>
-        <div>
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            {% if current_user.is_authenticated and user_baskets %}
+            <form method="POST" action="{{ url_for('baskets.add_item_quick') }}" style="display: flex; gap: 0.4rem; align-items: center; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="ean" value="{{ stats.ean }}">
+                <select name="basket_id" style="padding: 0.45rem 0.6rem; border-radius: 6px; background: #0b132b; color: white; border: 1px solid #3a506b; font-size: 0.85rem; width: auto; max-width: 220px;">
+                    {% for b in user_baskets %}
+                    <option value="{{ b.id }}">{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-secondary" title="{{ _('Añadir este artículo a la canasta seleccionada') }}">+ {{ _('Añadir a Canasta') }}</button>
+            </form>
+            {% endif %}
             <a href="{{ url_for('optimize.optimize') }}?eans={{ stats.ean }}" class="btn btn-success">
                 {{ _('Ver en Optimizar Precios') }}
             </a>

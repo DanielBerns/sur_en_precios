@@ -516,3 +516,50 @@ def clone_public_basket(uuid_str: str):
         logger.error("Error cloning public basket %s: %s", uuid_str, exc)
         flash(_("Error al guardar una copia de la canasta."), "error")
         return redirect(url_for("baskets.baskets"))
+
+
+@baskets_bp.route("/add-item", methods=["POST"])
+@login_required
+def add_item_quick():
+    """Quickly adds an EAN to a user's basket from catalog or detail view."""
+    try:
+        basket_id = int(request.form.get("basket_id", 0))
+        ean = str(request.form.get("ean", "")).strip()
+        if not basket_id or not ean:
+            flash(_("Datos inválidos."), "error")
+            return redirect(request.referrer or url_for("catalog.index"))
+
+        with get_user_session() as u_session:
+            user_repo = get_user_repository(u_session)
+            user_id = _resolve_user_id(user_repo)
+            user_baskets = user_repo.get_user_baskets(user_id=user_id)
+            basket = next((b for b in user_baskets if b.id == basket_id), None)
+            if not basket:
+                flash(_("Canasta no encontrada."), "error")
+                return redirect(request.referrer or url_for("catalog.index"))
+
+            existing = next((it for it in basket.items if it.ean == ean), None)
+            if existing:
+                existing.quantity += 1
+            else:
+                basket.items.append(
+                    BasketItem(
+                        ean=ean,
+                        quantity=1,
+                        selected=True,
+                        numerator=1,
+                        denominator=1,
+                    )
+                )
+            user_repo.save_basket(basket)
+            flash(
+                _("Artículo agregado a la canasta '%(name)s'.", name=basket.name),
+                "success",
+            )
+            return redirect(
+                request.referrer or url_for("baskets.edit_basket", basket_id=basket.id)
+            )
+    except Exception as exc:
+        logger.error("Error in quick add item: %s", exc)
+        flash(_("Error al agregar el artículo a la canasta."), "error")
+        return redirect(request.referrer or url_for("catalog.index"))

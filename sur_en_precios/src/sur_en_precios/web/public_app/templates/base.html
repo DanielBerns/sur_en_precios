@@ -88,6 +88,13 @@
             return `$${formatted} ARS`;
         }
 
+        function escapeHtml(str) {
+            if (!str) return "";
+            const div = document.createElement("div");
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         function openPriceStatsModal(event, ean) {
             if (event && (event.metaKey || event.ctrlKey)) {
                 return; // Let browser open in new tab
@@ -135,22 +142,32 @@
             const content = document.getElementById("price_stats_modal_content");
             if (!content) return;
 
+            const safeName = escapeHtml(data.name || data.clean_description || '');
+            const safeBrand = escapeHtml(data.brand_name || '-');
+            const safePackage = data.package ? escapeHtml(data.package) : '';
+            const safeCategory = data.category_name ? escapeHtml(data.category_name) : '';
+            const safeCity = data.city ? escapeHtml(data.city) : '';
+            const safeDate = data.date ? escapeHtml(data.date) : '';
+            const safeEan = escapeHtml(data.ean || '');
+            const safeCheapest = escapeHtml(data.cheapest_store || '-');
+            const safeMostExp = escapeHtml(data.most_expensive_store || '-');
+
             let pricesHtml = "";
             if (data.store_prices && data.store_prices.length > 0) {
                 const rows = data.store_prices.map(st => `
                     <tr>
                         <td>
-                            <strong>${st.chain_name}</strong>
-                            ${st.branch_name ? `<br><small style="color: #a0aec0;">${st.branch_name}</small>` : ''}
+                            <strong>${escapeHtml(st.chain_name)}</strong>
+                            ${st.branch_name ? `<br><small style="color: #a0aec0;">${escapeHtml(st.branch_name)}</small>` : ''}
                         </td>
-                        <td>${st.city || '-'}</td>
+                        <td>${escapeHtml(st.city || '-')}</td>
                         <td>
                             <strong style="color: ${st.price === data.min_price ? 'var(--success)' : (st.price === data.max_price ? 'var(--danger)' : 'var(--text)')};">
                                 ${formatCurrency(st.price)}
                             </strong>
                         </td>
                         <td>
-                            ${st.unit_price ? `$${st.unit_price.toFixed(2)} / ${st.unit || 'u'}` : '-'}
+                            ${st.unit_price ? `$${st.unit_price.toFixed(2)} / ${escapeHtml(st.unit || 'u')}` : '-'}
                         </td>
                     </tr>
                 `).join("");
@@ -184,16 +201,16 @@
             content.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; border-bottom: 1px solid #3a506b; padding-bottom: 1rem;">
                     <div>
-                        <h3 style="margin: 0; color: var(--accent); font-size: 1.25rem;">${data.name || data.clean_description}</h3>
+                        <h3 style="margin: 0; color: var(--accent); font-size: 1.25rem;">${safeName}</h3>
                         <div style="color: #a0aec0; font-size: 0.9rem; margin-top: 0.25rem;">
-                            <span>Marca: <strong>${data.brand_name || '-'}</strong></span>
-                            ${data.package ? ` | <span>Envase: ${data.package}</span>` : ''}
-                            ${data.category_name ? ` | <span>Categoría: ${data.category_name}</span>` : ''}
+                            <span>Marca: <strong>${safeBrand}</strong></span>
+                            ${safePackage ? ` | <span>Envase: ${safePackage}</span>` : ''}
+                            ${safeCategory ? ` | <span>Categoría: ${safeCategory}</span>` : ''}
                         </div>
                         <div style="margin-top: 0.4rem;">
-                            <code style="background: #0b132b; padding: 2px 6px; border-radius: 4px; color: var(--accent); border: 1px solid #3a506b;">EAN: ${data.ean}</code>
-                            ${data.date ? `<small style="color: #a0aec0; margin-left: 0.75rem;">Fecha: ${data.date}</small>` : ''}
-                            ${data.city ? `<span class="badge badge-info" style="margin-left: 0.5rem;">${data.city}</span>` : ''}
+                            <code style="background: #0b132b; padding: 2px 6px; border-radius: 4px; color: var(--accent); border: 1px solid #3a506b;">EAN: ${safeEan}</code>
+                            ${safeDate ? `<small style="color: #a0aec0; margin-left: 0.75rem;">Fecha: ${safeDate}</small>` : ''}
+                            ${safeCity ? `<span class="badge badge-info" style="margin-left: 0.5rem;">${safeCity}</span>` : ''}
                         </div>
                     </div>
                     <button type="button" onclick="closePriceStatsModal()" style="background: transparent; border: none; color: #a0aec0; font-size: 1.5rem; cursor: pointer; padding: 0 0.5rem; line-height: 1;" title="Cerrar">&times;</button>
@@ -203,7 +220,7 @@
                     <div class="stat-card stat-min">
                         <small style="color: var(--success); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Precio Mínimo</small>
                         <div class="stat-val" style="color: var(--success);">${formatCurrency(data.min_price)}</div>
-                        <small style="color: #a0aec0; font-size: 0.8rem;">${data.cheapest_store || '-'}</small>
+                        <small style="color: #a0aec0; font-size: 0.8rem;">${safeCheapest}</small>
                     </div>
                     <div class="stat-card stat-ref">
                         <small style="color: var(--warning); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Precio Referencia</small>
@@ -213,7 +230,7 @@
                     <div class="stat-card stat-max">
                         <small style="color: var(--danger); text-transform: uppercase; font-size: 0.75rem; font-weight: bold;">Precio Máximo</small>
                         <div class="stat-val" style="color: var(--danger);">${formatCurrency(data.max_price)}</div>
-                        <small style="color: #a0aec0; font-size: 0.8rem;">${data.most_expensive_store || '-'}</small>
+                        <small style="color: #a0aec0; font-size: 0.8rem;">${safeMostExp}</small>
                     </div>
                 </div>
 
