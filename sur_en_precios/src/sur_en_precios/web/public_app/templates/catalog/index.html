@@ -25,9 +25,22 @@
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
         <h2 style="margin: 0;">{{ _('Resultados de Búsqueda') }}</h2>
-        <span style="color: #a0aec0; font-size: 0.9rem;">
-            {{ _('Mostrando %(start)s-%(end)s de %(total)s artículos encontrados', start=pagination.start_item, end=pagination.end_item, total=pagination.total_items) }}
-        </span>
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <span style="color: #a0aec0; font-size: 0.9rem;">
+                {{ _('Mostrando %(start)s-%(end)s de %(total)s artículos encontrados', start=pagination.start_item, end=pagination.end_item, total=pagination.total_items) }}
+            </span>
+            <form method="GET" action="{{ url_for('catalog.index') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; margin: 0;">
+                <input type="hidden" name="q" value="{{ query }}">
+                <input type="hidden" name="mode" value="{{ mode }}">
+                <label for="per_page_select" style="font-size: 0.85rem; color: #a0aec0; margin: 0;">{{ _('Por página:') }}</label>
+                <select id="per_page_select" name="per_page" onchange="this.form.submit()" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; background: #0b132b; color: white; border: 1px solid #3a506b; border-radius: 4px; width: auto;">
+                    <option value="20" {% if pagination.per_page == 20 %}selected{% endif %}>20</option>
+                    <option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option>
+                    <option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option>
+                    <option value="200" {% if pagination.per_page == 200 %}selected{% endif %}>200</option>
+                </select>
+            </form>
+        </div>
     </div>
     <table>
         <thead>
@@ -57,7 +70,7 @@
     {% if pagination.total_pages > 1 %}
     <nav class="pagination" aria-label="{{ _('Paginación de resultados') }}">
         {% if pagination.has_prev %}
-        <a href="{{ url_for('catalog.index', q=query, mode=mode, page=pagination.prev_num) }}" class="page-link">&laquo; {{ _('Anterior') }}</a>
+        <a href="{{ url_for('catalog.index', q=query, mode=mode, per_page=pagination.per_page, page=pagination.prev_num) }}" class="page-link">&laquo; {{ _('Anterior') }}</a>
         {% else %}
         <span class="page-link disabled">&laquo; {{ _('Anterior') }}</span>
         {% endif %}
@@ -67,7 +80,7 @@
                 {% if p == pagination.page %}
                 <span class="page-link active">{{ p }}</span>
                 {% else %}
-                <a href="{{ url_for('catalog.index', q=query, mode=mode, page=p) }}" class="page-link">{{ p }}</a>
+                <a href="{{ url_for('catalog.index', q=query, mode=mode, per_page=pagination.per_page, page=p) }}" class="page-link">{{ p }}</a>
                 {% endif %}
             {% else %}
                 <span class="page-ellipsis">&hellip;</span>
@@ -75,7 +88,7 @@
         {% endfor %}
 
         {% if pagination.has_next %}
-        <a href="{{ url_for('catalog.index', q=query, mode=mode, page=pagination.next_num) }}" class="page-link">{{ _('Siguiente') }} &raquo;</a>
+        <a href="{{ url_for('catalog.index', q=query, mode=mode, per_page=pagination.per_page, page=pagination.next_num) }}" class="page-link">{{ _('Siguiente') }} &raquo;</a>
         {% else %}
         <span class="page-link disabled">{{ _('Siguiente') }} &raquo;</span>
         {% endif %}

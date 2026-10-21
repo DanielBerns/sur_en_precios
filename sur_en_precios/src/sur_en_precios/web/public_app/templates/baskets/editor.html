@@ -370,28 +370,39 @@
     }
     const selectAllFoundArticles = addAllFoundArticles;
 
+    let currentSearchPage = 1;
+
     function renderArticleResults(data) {
         const container = document.getElementById('search_results_container');
         const btnAll = document.getElementById('btn_add_all_found');
         const countSpan = document.getElementById('search_results_count');
 
-        if (!data || data.length === 0) {
+        const items = Array.isArray(data) ? data : (data.items || []);
+        const total = Array.isArray(data) ? data.length : (data.total || 0);
+        const currentPage = Array.isArray(data) ? 1 : (data.page || 1);
+        const totalPages = Array.isArray(data) ? 1 : (data.total_pages || 1);
+        const perPage = Array.isArray(data) ? items.length : (data.per_page || 20);
+
+        if (!items || items.length === 0) {
             container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: #a0aec0;">No se encontraron artículos.</div>';
             return;
         }
-        lastSearchResults = data;
+        lastSearchResults = items;
         if (btnAll) {
             btnAll.disabled = false;
             btnAll.className = 'btn btn-sm btn-success';
             btnAll.style.opacity = '1';
             btnAll.style.cursor = 'pointer';
+            btnAll.innerText = '+ Agregar ' + items.length + ' de esta página';
         }
         if (countSpan) {
-            countSpan.innerText = data.length + ' ' + (data.length === 1 ? 'artículo disponible' : 'artículos disponibles');
+            const start = (currentPage - 1) * perPage + 1;
+            const end = Math.min(currentPage * perPage, total);
+            countSpan.innerText = `Mostrando ${start}-${end} de ${total} artículos encontrados`;
         }
 
         container.innerHTML = '';
-        data.forEach(item => {
+        items.forEach(item => {
             const card = document.createElement('div');
             card.className = 'result-card';
 
@@ -445,12 +456,61 @@
             card.appendChild(btnDiv);
             container.appendChild(card);
         });
+
+        if (totalPages > 1) {
+            const pagDiv = document.createElement('div');
+            pagDiv.className = 'search-modal-pagination';
+            pagDiv.style.display = 'flex';
+            pagDiv.style.justifyContent = 'center';
+            pagDiv.style.alignItems = 'center';
+            pagDiv.style.gap = '0.75rem';
+            pagDiv.style.padding = '1rem 0 0.5rem';
+            pagDiv.style.borderTop = '1px solid #1c2541';
+            pagDiv.style.marginTop = '1rem';
+            pagDiv.style.flexWrap = 'wrap';
+
+            const prevBtn = document.createElement('button');
+            prevBtn.type = 'button';
+            prevBtn.className = 'btn btn-sm btn-secondary';
+            prevBtn.innerHTML = '&laquo; Anterior';
+            if (currentPage <= 1) {
+                prevBtn.disabled = true;
+                prevBtn.style.opacity = '0.5';
+                prevBtn.style.cursor = 'not-allowed';
+            } else {
+                prevBtn.addEventListener('click', () => searchArticles(currentPage - 1));
+            }
+            pagDiv.appendChild(prevBtn);
+
+            const pageIndicator = document.createElement('span');
+            pageIndicator.style.fontSize = '0.85rem';
+            pageIndicator.style.color = '#a0aec0';
+            pageIndicator.style.padding = '0 0.5rem';
+            pageIndicator.textContent = `Página ${currentPage} de ${totalPages}`;
+            pagDiv.appendChild(pageIndicator);
+
+            const nextBtn = document.createElement('button');
+            nextBtn.type = 'button';
+            nextBtn.className = 'btn btn-sm btn-secondary';
+            nextBtn.innerHTML = 'Siguiente &raquo;';
+            if (currentPage >= totalPages) {
+                nextBtn.disabled = true;
+                nextBtn.style.opacity = '0.5';
+                nextBtn.style.cursor = 'not-allowed';
+            } else {
+                nextBtn.addEventListener('click', () => searchArticles(currentPage + 1));
+            }
+            pagDiv.appendChild(nextBtn);
+
+            container.appendChild(pagDiv);
+        }
     }
 
-    function searchArticles() {
+    function searchArticles(page = 1) {
         const q = document.getElementById('search_input').value.trim();
         if (!q) return;
 
+        currentSearchPage = page;
         const mode = document.getElementById('mode_exact').checked ? 'exact' : 'fuzzy';
         const container = document.getElementById('search_results_container');
         const btnAll = document.getElementById('btn_add_all_found');
@@ -462,6 +522,7 @@
             btnAll.className = 'btn btn-sm btn-secondary';
             btnAll.style.opacity = '0.6';
             btnAll.style.cursor = 'not-allowed';
+            btnAll.innerText = '+ Agregar Todos';
         }
         if (countSpan) {
             countSpan.innerText = '';
@@ -469,7 +530,7 @@
 
         container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: var(--accent);">Buscando productos...</div>';
 
-        fetch('{{ url_for("api.api_search_articles") }}?q=' + encodeURIComponent(q) + '&mode=' + mode)
+        fetch('{{ url_for("api.api_search_articles") }}?q=' + encodeURIComponent(q) + '&mode=' + mode + '&page=' + page + '&per_page=20&paginated=1')
             .then(r => r.json())
             .then(data => {
                 renderArticleResults(data);

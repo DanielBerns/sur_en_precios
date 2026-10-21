@@ -76,9 +76,9 @@ class ArticleSearchQuery(BaseModel):
 
     q: str = ""
     mode: Literal["fuzzy", "exact"] = "fuzzy"
-    limit: int = Field(default=20, ge=1, le=100)
+    limit: Optional[int] = Field(default=None, ge=1)
     page: int = Field(default=1, ge=1)
-    per_page: int = Field(default=20, ge=1, le=100)
+    per_page: int = Field(default=20, ge=1, le=500)
 
 
 class CategoryArticlesQuery(BaseModel):
@@ -113,6 +113,16 @@ class ArticleSearchResultSchema(BaseModel):
     name: str
     brand: str = ""
     category: str = ""
+
+
+class ArticleSearchPaginatedSchema(BaseModel):
+    """JSON response schema for paginated article search results."""
+
+    items: List[ArticleSearchResultSchema]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
 
 
 class StorePriceItemSchema(BaseModel):

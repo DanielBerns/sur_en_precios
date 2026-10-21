@@ -45,7 +45,7 @@ def index():
         page = 1
 
     try:
-        per_page = max(1, min(100, int(per_page_param)))
+        per_page = max(1, min(500, int(per_page_param)))
     except (ValueError, TypeError):
         per_page = 20
 

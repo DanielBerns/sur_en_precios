@@ -1,4 +1,5 @@
 import logging
+import math
 
 from flask import Blueprint, jsonify, request
 
@@ -10,6 +11,7 @@ from sur_en_precios.web.public_app.database import (
 from sur_en_precios.web.public_app.schemas import (
     ArticlePriceStatsQuery,
     ArticlePriceStatsResponseSchema,
+    ArticleSearchPaginatedSchema,
     ArticleSearchQuery,
     ArticleSearchResultSchema,
     CategoryArticlesQuery,
@@ -24,34 +26,79 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 @api_bp.route("/articles/search")
 def api_search_articles():
     try:
+        raw_limit = request.args.get("limit", type=int)
+        raw_page = request.args.get("page", 1, type=int)
+        raw_per_page = request.args.get("per_page", 20, type=int)
         query = ArticleSearchQuery(
             q=request.args.get("q", ""),
             mode=request.args.get("mode", "fuzzy"),
-            limit=request.args.get("limit", 20, type=int),
+            limit=raw_limit,
+            page=raw_page if raw_page else 1,
+            per_page=raw_per_page if raw_per_page else 20,
         )
     except Exception:
         query = ArticleSearchQuery(
             q=request.args.get("q", ""),
             mode="fuzzy",
-            limit=20,
+            limit=None,
+            page=1,
+            per_page=20,
         )
 
     try:
         with get_public_session() as session:
             cat_repo = get_catalog_repository(session)
-            results = cat_repo.search_articles(
-                query.q, limit=query.limit, mode=query.mode
-            )
-            payload = [
-                ArticleSearchResultSchema(
-                    ean=r.ean,
-                    name=r.name,
-                    brand=getattr(r, "brand_name", None) or "",
-                    category=getattr(r, "category_name", None) or "",
-                ).model_dump()
-                for r in results
-            ]
-            return jsonify(payload)
+            is_paginated_req = "page" in request.args or request.args.get(
+                "paginated"
+            ) in ("1", "true", "yes")
+
+            if is_paginated_req:
+                results, total = cat_repo.search_articles_paginated(
+                    query=query.q,
+                    page=query.page,
+                    per_page=query.per_page,
+                    mode=query.mode,
+                )
+                items_payload = [
+                    ArticleSearchResultSchema(
+                        ean=r.ean,
+                        name=r.name,
+                        brand=getattr(r, "brand_name", None) or "",
+                        category=getattr(r, "category_name", None) or "",
+                    ).model_dump()
+                    for r in results
+                ]
+                total_pages = max(1, math.ceil(total / query.per_page))
+                resp = jsonify(
+                    ArticleSearchPaginatedSchema(
+                        items=items_payload,
+                        total=total,
+                        page=query.page,
+                        per_page=query.per_page,
+                        total_pages=total_pages,
+                    ).model_dump()
+                )
+                resp.headers["X-Total-Count"] = str(total)
+                resp.headers["X-Page"] = str(query.page)
+                resp.headers["X-Total-Pages"] = str(total_pages)
+                resp.headers["X-Per-Page"] = str(query.per_page)
+                return resp
+            else:
+                results = cat_repo.search_articles(
+                    query.q, limit=query.limit, mode=query.mode
+                )
+                payload = [
+                    ArticleSearchResultSchema(
+                        ean=r.ean,
+                        name=r.name,
+                        brand=getattr(r, "brand_name", None) or "",
+                        category=getattr(r, "category_name", None) or "",
+                    ).model_dump()
+                    for r in results
+                ]
+                resp = jsonify(payload)
+                resp.headers["X-Total-Count"] = str(len(payload))
+                return resp
     except Exception as exc:
         logger.error(
             "API article search error (q=%r, mode=%s): %s",

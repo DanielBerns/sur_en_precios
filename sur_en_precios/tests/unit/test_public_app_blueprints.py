@@ -157,3 +157,29 @@ def test_database_helpers_and_sessions(tmp_path: Path):
             assert user1.email == "demo@surenprecios.ar"
             user2 = get_or_create_demo_user(repo)
             assert user1.id == user2.id
+
+
+def test_api_search_articles_pagination(tmp_path: Path):
+    """Verifies that api_search_articles supports paginated and unpaginated responses."""
+    workdir = tmp_path / "search_pagination_workdir"
+    app = create_public_app(workdir=workdir)
+    client = app.test_client()
+
+    # 1. Unpaginated request returns list
+    res_list = client.get("/api/articles/search?q=test")
+    assert res_list.status_code == 200
+    assert isinstance(res_list.get_json(), list)
+    assert "X-Total-Count" in res_list.headers
+
+    # 2. Paginated request returns dict with metadata
+    res_pag = client.get("/api/articles/search?q=test&page=1&per_page=10&paginated=1")
+    assert res_pag.status_code == 200
+    data = res_pag.get_json()
+    assert isinstance(data, dict)
+    assert "items" in data
+    assert "total" in data
+    assert "page" in data
+    assert "per_page" in data
+    assert "total_pages" in data
+    assert res_pag.headers.get("X-Page") == "1"
+    assert res_pag.headers.get("X-Per-Page") == "10"

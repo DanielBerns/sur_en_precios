@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -371,7 +372,7 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 )
 
             if conditions:
-                token_stmt = base_stmt.where(or_(*conditions)).limit(2500)
+                token_stmt = base_stmt.where(or_(*conditions))
                 for a in self._session.execute(token_stmt).scalars().unique():
                     candidates_map[a.ean] = a
 
@@ -388,56 +389,108 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 ]
                 if matched_brand_names:
                     brand_stmt = base_stmt.where(
-                        Article.brand_name.in_(matched_brand_names[:20])
-                    ).limit(500)
+                        Article.brand_name.in_(matched_brand_names)
+                    )
                     for a in self._session.execute(brand_stmt).scalars().unique():
                         candidates_map[a.ean] = a
 
-            # If still few candidates, test small sample
+            # If still few candidates, test sample
             if len(candidates_map) < 50:
-                sample_stmt = base_stmt.limit(200)
+                sample_stmt = base_stmt
                 for a in self._session.execute(sample_stmt).scalars().unique():
                     candidates_map[a.ean] = a
 
-            # Rank candidates by similarity score
-            scored: List[Tuple[float, Article]] = []
+            # Rank candidates by relevance and similarity score
+            scored: List[Tuple[float, str, Article]] = []
             q_lower = q.lower()
 
             for a in candidates_map.values():
                 if a.ean == q:
-                    scored.append((10.0, a))
+                    scored.append((1000.0, a.name or "", a))
                     continue
 
                 desc_str = (a.name or a.clean_description or "").lower()
                 b_str = (a.brand_name or "").lower()
                 cat_str = (a.category.name if a.category else "").lower()
-                full_text = f"{desc_str} {b_str} {cat_str}"
 
-                if q_lower in full_text:
-                    score = 5.0 + (len(q_lower) / max(len(full_text), 1))
-                else:
+                # Exact match on name
+                if desc_str == q_lower:
+                    scored.append((500.0, a.name or "", a))
+                    continue
+
+                score = 0.0
+
+                # 1. Primary Product: Does the description start with the query?
+                # e.g. "Arroz Gallo..." when searching "arroz"
+                if desc_str.startswith(q_lower + " "):
+                    score += 100.0
+                elif q_lower in desc_str:
+                    score += 40.0
+
+                # 2. Whole word match
+                if re.search(r"\b" + re.escape(q_lower) + r"\b", desc_str):
+                    score += 20.0
+
+                # 3. Category match
+                if q_lower in cat_str:
+                    score += 15.0
+                    if desc_str.startswith(q_lower + " "):
+                        score += 15.0
+
+                # 4. Derivative penalty
+                # When searching a staple (like "arroz"), items that are snacks, desserts,
+                # or derivatives ("tostadas de arroz", "galletitas de arroz", "arroz con leche",
+                # "vinagre de arroz") should be penalized so pure products rank first.
+                if re.search(
+                    r"\b(de|con|sabor|a base de)\s+" + re.escape(q_lower) + r"\b",
+                    desc_str,
+                ):
+                    score -= 50.0
+                if "con leche" in desc_str or "con salsa" in desc_str:
+                    score -= 50.0
+                if re.match(
+                    r"^(tostadas?|galletit?as?|alfajor(es)?|oblea|snack|fideos?|harina|cerveza|copos|cereal(es)?|barra|condimento)\b",
+                    desc_str,
+                ):
+                    score -= 60.0
+                if re.match(r"^(v\s+|vinagre\s+)", desc_str):
+                    score -= 60.0
+
+                # 5. Brand and packaging quality boosts
+                if b_str:
+                    score += 5.0
+                if re.search(r"\b(1\s*kg|500\s*g|1000\s*g)\b", desc_str):
+                    score += 5.0
+
+                # Penalize dirty or truncated items (e.g. "arroz para 1 u")
+                if re.search(r"\b(para\s+1\s*u)\b", desc_str):
+                    score -= 40.0
+
+                # 6. Fuzzy token fallback if score is low
+                if score < 10.0:
                     tok_scores = []
                     for tok in tokens:
                         best_tok = 0.0
-                        for word in full_text.split():
+                        for word in f"{desc_str} {b_str}".split():
                             sim = fuzzy_similarity_ratio(tok, word)
                             if sim > best_tok:
                                 best_tok = sim
                         tok_scores.append(best_tok)
                     avg_tok = sum(tok_scores) / len(tok_scores) if tok_scores else 0.0
-                    score = max(
+                    fuzzy_score = max(
                         fuzzy_similarity_ratio(q_lower, desc_str),
                         fuzzy_similarity_ratio(q_lower, b_str),
                         avg_tok,
                     )
+                    score = max(score, fuzzy_score * 10.0)
 
-                if score >= 0.35:
-                    scored.append((score, a))
+                if score >= 3.5:
+                    scored.append((score, a.name or "", a))
 
-            scored.sort(key=lambda pair: pair[0], reverse=True)
+            scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
             total = len(scored)
             start = (page - 1) * per_page
-            return [a for _, a in scored[start : start + per_page]], total
+            return [a for _, _, a in scored[start : start + per_page]], total
         except Exception as exc:
             logger.error(
                 "Error executing search_articles_paginated (query=%r, mode=%s, page=%s): %s",
@@ -449,10 +502,11 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             raise
 
     def search_articles(
-        self, query: str, limit: int = 50, mode: str = "fuzzy"
+        self, query: str, limit: Optional[int] = None, mode: str = "fuzzy"
     ) -> List[Article]:
+        per_page = limit if limit is not None and limit > 0 else 1000000
         items, _ = self.search_articles_paginated(
-            query=query, page=1, per_page=limit, mode=mode
+            query=query, page=1, per_page=per_page, mode=mode
         )
         return items
 

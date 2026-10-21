@@ -95,7 +95,7 @@ class CatalogRepositoryPort(ABC):
 
     @abstractmethod
     def search_articles(
-        self, query: str, limit: int = 50, mode: str = "fuzzy"
+        self, query: str, limit: Optional[int] = None, mode: str = "fuzzy"
     ) -> List[ArticleCard]: ...
 
     def search_articles_paginated(
