@@ -18,6 +18,7 @@
             <button type="button" class="btn btn-secondary btn-sm" onclick="copyText('{{ basket.uuid }}', this)">{{ _('Copiar UUID') }}</button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="copyText(window.location.href, this)">{{ _('Copiar Enlace') }}</button>
             <a href="{{ url_for('baskets.export_public_basket', uuid_str=basket.uuid) }}" class="btn btn-secondary btn-sm">{{ _('Descargar YAML') }}</a>
+            <a href="{{ url_for('baskets.export_public_basket_prices_json', uuid_str=basket.uuid) }}" class="btn btn-secondary btn-sm">{{ _('Descargar Precios (JSON)') }}</a>
             <a href="{{ url_for('optimize.optimize', public_uuid=basket.uuid) }}" class="btn btn-success btn-sm">{{ _('Optimizar Precios') }}</a>
             <form method="POST" action="{{ url_for('baskets.clone_public_basket', uuid_str=basket.uuid) }}" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

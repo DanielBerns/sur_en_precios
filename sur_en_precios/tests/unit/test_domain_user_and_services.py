@@ -7,7 +7,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from sur_en_precios.domain.models import BasketOptimizationResult
+from sur_en_precios.domain.models import (
+    BasketOptimizationResult,
+    ItemBestPrice,
+    StoreBasketTotal,
+    StoreItemPrice,
+)
 from sur_en_precios.domain.models_public import (
     ArticleBrand,
     ArticleCard,
@@ -36,6 +41,7 @@ from sur_en_precios.domain.ports import (
 )
 from sur_en_precios.domain.services import (
     BasketOptimizerService,
+    BasketPriceReportService,
     BasketYamlService,
     PriceMetricsCalculator,
     YamlValidationError,
@@ -519,3 +525,181 @@ basket:
         # Warnings for duplicate and missing catalog ean 888001
         assert any("duplicado" in w for w in parsed.warnings)
         assert any("no se encuentra en el catálogo" in w for w in parsed.warnings)
+
+
+class TestBasketPriceReportService:
+    """Tests for JSON price report generation and serialization."""
+
+    def test_basket_price_report_json_generation(self):
+        # 1. Setup mock models
+        store1 = Store(
+            code="S001",
+            brand_name="Supermercado A",
+            branch_name="Centro",
+            city="Comodoro Rivadavia",
+            address="Av. San Martín 100",
+        )
+        store2 = Store(
+            code="S002",
+            brand_name="Supermercado B",
+            branch_name="Norte",
+            city="Comodoro Rivadavia",
+            address="Av. Rivadavia 200",
+        )
+
+        card1 = ArticleCard(
+            ean="779001",
+            name="Leche Entera 1L",
+            brand_name="La Serenísima",
+            package="1 L",
+            package_amount=1.0,
+            package_unit="L",
+        )
+        card2 = ArticleCard(
+            ean="779002",
+            name="Pan Lactal 500g",
+            brand_name="Bimbo",
+            package="500 g",
+            package_amount=500.0,
+            package_unit="g",
+        )
+
+        item1 = BasketItem(
+            ean="779001", quantity=2, selected=True, numerator=1, denominator=1
+        )
+        item2 = BasketItem(
+            ean="779002", quantity=1, selected=True, numerator=1, denominator=2
+        )
+
+        basket = Basket(
+            id=10,
+            name="Canasta Test",
+            uuid="11111111-2222-3333-4444-555555555555",
+            is_public=True,
+            items=[item1, item2],
+        )
+
+        best_item1 = ItemBestPrice(
+            product=card1,
+            cheapest_store=store1,
+            price=1000,
+            unit_price=1000.0,
+            unit="L",
+            min_price=1000,
+            reference_price=1100,
+            max_price=1200,
+            price_dispersion=0.09,
+            quantity=2,
+            numerator=1,
+            denominator=1,
+        )
+        best_item2 = ItemBestPrice(
+            product=card2,
+            cheapest_store=store2,
+            price=800,
+            unit_price=1600.0,
+            unit="kg",
+            min_price=800,
+            reference_price=900,
+            max_price=1000,
+            price_dispersion=0.11,
+            quantity=1,
+            numerator=1,
+            denominator=2,
+        )
+
+        single_store_total = StoreBasketTotal(
+            store=store1,
+            total_price=3000,
+            matched_items_count=2,
+            requested_items_count=2,
+            is_complete=True,
+            item_prices={
+                "779001": StoreItemPrice(ean="779001", price=1000, is_lowest=True),
+                "779002": StoreItemPrice(ean="779002", price=1000, is_lowest=False),
+            },
+        )
+
+        store2_total = StoreBasketTotal(
+            store=store2,
+            total_price=2600,
+            matched_items_count=2,
+            requested_items_count=2,
+            is_complete=True,
+            item_prices={
+                "779001": StoreItemPrice(ean="779001", price=1200, is_lowest=False),
+                "779002": StoreItemPrice(ean="779002", price=800, is_lowest=True),
+            },
+        )
+
+        opt_result = BasketOptimizationResult(
+            city="Comodoro Rivadavia",
+            calculation_date=date(2026, 10, 20),
+            requested_items=[item1, item2],
+            best_single_store=store2_total,
+            item_by_item_optimal=[best_item1, best_item2],
+            complete_stores=[store2_total, single_store_total],
+            partial_stores=[],
+            reference_prices={"779001": 1100, "779002": 900},
+            multi_store_total_price=2400,
+        )
+
+        unpriced = [{"ean": "779999", "name": "Item Sin Precio", "brand": "Marca X"}]
+
+        # 2. Build report dict
+        report = BasketPriceReportService.build_report_dict(
+            result=opt_result, basket=basket, unpriced_items=unpriced
+        )
+
+        assert report["report_type"] == "basket_prices_report"
+        assert report["version"] == "1.0"
+        assert "generated_at" in report
+        assert report["basket"]["id"] == 10
+        assert report["basket"]["name"] == "Canasta Test"
+        assert report["basket"]["is_public"] is True
+        assert report["parameters"]["city"] == "Comodoro Rivadavia"
+        assert report["parameters"]["date"] == "2026-10-20"
+
+        # Summary
+        summary = report["summary"]
+        assert summary["total_requested_items"] == 2
+        assert summary["priced_items_count"] == 2
+        assert summary["unpriced_items_count"] == 1
+        assert summary["best_single_store"]["store_code"] == "S002"
+        assert summary["best_single_store"]["total_price"] == 2600
+        assert summary["multi_store_optimal_total"] == 2400
+        assert summary["potential_savings"] == 200
+        assert summary["potential_savings_percent"] > 0
+
+        # Articles
+        articles = report["articles"]
+        assert len(articles) == 2
+        art1 = next(a for a in articles if a["ean"] == "779001")
+        assert art1["name"] == "Leche Entera 1L"
+        assert art1["min_price"] == 1000
+        assert art1["reference_price"] == 1100
+        assert art1["cheapest_store"]["store_code"] == "S001"
+        assert art1["weighted_subtotal"] == 2000
+
+        art2 = next(a for a in articles if a["ean"] == "779002")
+        assert art2["min_price"] == 800
+        assert art2["weight"] == 0.5
+        assert art2["weighted_subtotal"] == 400
+
+        # Unpriced
+        assert len(report["unpriced_articles"]) == 1
+        assert report["unpriced_articles"][0]["ean"] == "779999"
+
+        # Complete stores
+        assert len(report["complete_stores"]) == 2
+
+        # 3. Test export_to_json
+        json_output = BasketPriceReportService.export_to_json(
+            result=opt_result, basket=basket, unpriced_items=unpriced
+        )
+        assert isinstance(json_output, str)
+        import json
+        parsed = json.loads(json_output)
+        assert parsed["report_type"] == "basket_prices_report"
+        assert parsed["summary"]["multi_store_optimal_total"] == 2400
+

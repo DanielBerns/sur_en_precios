@@ -48,6 +48,11 @@
 </div>
 
 {% if result %}
+<div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 1rem;">
+    <a href="{{ url_for('optimize.optimize', city=selected_city, date=selected_date_str, eans=eans_str, list_id=list_id, public_uuid=public_uuid, format='json') }}" class="btn btn-secondary">
+        📥 {{ _('Descargar Reporte JSON') }}
+    </a>
+</div>
 {% if not result.item_by_item_optimal and not result.complete_stores and not result.partial_stores %}
 <div class="card" style="border-left: 6px solid var(--warning);">
     <h3 style="color: var(--warning); margin-top: 0;">{{ _('Sin resultados para esta selección') }}</h3>

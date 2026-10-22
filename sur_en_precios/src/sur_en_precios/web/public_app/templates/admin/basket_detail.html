@@ -20,7 +20,10 @@
                 {% endif %}
             </div>
         </div>
-        <div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <a href="{{ url_for('baskets.export_basket_prices_json', basket_id=basket.id) }}" class="btn btn-secondary">
+                Descargar Precios (JSON)
+            </a>
             <a href="{{ url_for('optimize.optimize', list_id=basket.id) }}" class="btn btn-success">
                 Optimizar Precios &rarr;
             </a>

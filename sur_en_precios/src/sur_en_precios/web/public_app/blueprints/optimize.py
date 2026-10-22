@@ -1,12 +1,22 @@
+import json
 import logging
 import re
 from datetime import date
 from typing import List
 
-from flask import Blueprint, current_app, flash, render_template, request, session
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    flash,
+    render_template,
+    request,
+    session,
+)
 from flask_babel import gettext as _
 
 from sur_en_precios.domain.models_user import BasketItem
+from sur_en_precios.domain.services import BasketPriceReportService
 from sur_en_precios.use_cases.optimize_basket import OptimizeBasketUseCase
 from sur_en_precios.web.public_app.database import (
     get_catalog_repository,
@@ -73,6 +83,7 @@ def optimize():
             selected_city = ""
 
     user_baskets = []
+    target_list = None
     requested_items: List[BasketItem] = []
     try:
         with get_user_session() as u_session:
@@ -175,6 +186,45 @@ def optimize():
             logger.error("Optimization calculation error: %s", exc)
             flash(_("Error al calcular los precios óptimos para la canasta."), "error")
 
+    is_json = (
+        request.args.get("format") == "json"
+        or request.args.get("download") == "json"
+        or (request.endpoint and request.endpoint.endswith("export_optimize_json"))
+    )
+    if is_json:
+        if not result:
+            return Response(
+                json.dumps(
+                    {
+                        "error": _(
+                            "No se encontraron datos de optimización o no se especificaron artículos para la canasta."
+                        )
+                    },
+                    ensure_ascii=False,
+                ),
+                status=400,
+                mimetype="application/json",
+            )
+        json_str = BasketPriceReportService.export_to_json(
+            result=result,
+            basket=target_list,
+            unpriced_items=unpriced_items,
+        )
+        clean_city = re.sub(r"[^a-zA-Z0-9_\-]", "_", selected_city)
+        filename = f"reporte_precios_{clean_city}_{selected_date_str}.json"
+        if target_list and getattr(target_list, "name", None):
+            clean_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", target_list.name)
+            filename = (
+                f"reporte_precios_{clean_name}_{clean_city}_{selected_date_str}.json"
+            )
+        elif public_uuid:
+            filename = f"reporte_precios_publica_{public_uuid[:8]}_{clean_city}_{selected_date_str}.json"
+        return Response(
+            json_str,
+            mimetype="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     return render_template(
         "optimize/optimize.html",
         selected_city=selected_city,
@@ -188,3 +238,10 @@ def optimize():
         requested_products=requested_products,
         unpriced_items=unpriced_items,
     )
+
+
+@optimize_bp.route("/optimize/export-json")
+def export_optimize_json():
+    """Exports optimize price report as a JSON file."""
+    return optimize()
+

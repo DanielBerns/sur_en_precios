@@ -1,8 +1,17 @@
 import datetime as dt
+import json
 from pathlib import Path
 
 from flask import url_for
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from sur_en_precios.domain.models_public import (
+    Article,
+    DailyPrice,
+    PointOfSale,
+)
+from sur_en_precios.domain.models_user import Basket, BasketItem
 from sur_en_precios.web.public_app import create_public_app
 from sur_en_precios.web.public_app.database import (
     get_or_create_demo_user,
@@ -135,10 +144,28 @@ def test_endpoint_aliases_and_url_for_resolution(tmp_path: Path):
         assert url_for("new_basket") == "/baskets/new"
         assert url_for("baskets.edit_basket", basket_id=42) == "/baskets/42/edit"
         assert url_for("edit_basket", basket_id=42) == "/baskets/42/edit"
+        assert (
+            url_for("baskets.export_basket_prices_json", basket_id=42)
+            == "/baskets/42/export-prices-json"
+        )
+        assert (
+            url_for("export_basket_prices_json", basket_id=42)
+            == "/baskets/42/export-prices-json"
+        )
+        assert (
+            url_for("baskets.export_public_basket_prices_json", uuid_str="abc-123")
+            == "/baskets/public/abc-123/export-prices-json"
+        )
+        assert (
+            url_for("export_public_basket_prices_json", uuid_str="abc-123")
+            == "/baskets/public/abc-123/export-prices-json"
+        )
 
         # Optimize
         assert url_for("optimize.optimize") == "/optimize"
         assert url_for("optimize") == "/optimize"
+        assert url_for("optimize.export_optimize_json") == "/optimize/export-json"
+        assert url_for("export_optimize_json") == "/optimize/export-json"
 
         # API
         assert url_for("api.api_search_articles") == "/api/articles/search"
@@ -183,3 +210,251 @@ def test_api_search_articles_pagination(tmp_path: Path):
     assert "total_pages" in data
     assert res_pag.headers.get("X-Page") == "1"
     assert res_pag.headers.get("X-Per-Page") == "10"
+
+
+def test_export_basket_prices_json_endpoint(tmp_path: Path):
+    """Verifies that export_basket_prices_json generates a downloadable JSON price report."""
+    workdir = tmp_path / "export_json_workdir"
+    app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
+
+    config = app.config["APP_CONFIG"]
+    public_engine = create_engine(f"sqlite:///{config.get_public_db_path()}")
+    user_engine = create_engine(f"sqlite:///{config.get_user_db_path()}")
+
+    target_date = dt.date(2026, 10, 20)
+
+    with Session(public_engine) as pub_session:
+        pos = PointOfSale(
+            code="POS-01",
+            brand_name="Supermercado Sur",
+            branch_name="Sucursal Central",
+            city="Comodoro Rivadavia",
+            address="San Martin 500",
+        )
+        art = Article(
+            ean="7790001",
+            name="Leche Entera 1L",
+            clean_description="Leche Entera 1L",
+            brand_name="La Serenísima",
+            package="1 L",
+            package_amount=1.0,
+            package_unit="L",
+        )
+        dp = DailyPrice(
+            date=target_date,
+            ean="7790001",
+            store_code="POS-01",
+            price=1500,
+            unit_price=1500.0,
+        )
+        pub_session.add_all([pos, art, dp])
+        pub_session.commit()
+
+    with Session(user_engine) as u_session:
+        user_repo = get_user_repository(u_session)
+        demo_user = get_or_create_demo_user(user_repo)
+        demo_user_id = demo_user.id
+        basket = Basket(
+            user_id=demo_user_id,
+            name="Canasta Familiar",
+            is_public=False,
+            items=[
+                BasketItem(
+                    ean="7790001",
+                    quantity=2,
+                    selected=True,
+                    numerator=1,
+                    denominator=1,
+                )
+            ],
+        )
+        saved_basket = user_repo.save_basket(basket)
+        basket_id = saved_basket.id
+
+    client = app.test_client()
+
+    with client.session_transaction() as sess:
+        sess["user_id"] = demo_user_id
+
+    # Test GET export-prices-json
+    res = client.get(
+        f"/baskets/{basket_id}/export-prices-json?city=Comodoro Rivadavia&date=2026-10-20"
+    )
+    assert res.status_code == 200
+    assert "application/json" in res.content_type
+    cd = res.headers.get("Content-Disposition", "")
+    assert "attachment" in cd
+    assert ".json" in cd
+
+    data = json.loads(res.get_data(as_text=True))
+    assert data["report_type"] == "basket_prices_report"
+    assert data["version"] == "1.0"
+    assert data["basket"]["id"] == basket_id
+    assert data["basket"]["name"] == "Canasta Familiar"
+    assert data["parameters"]["city"] == "Comodoro Rivadavia"
+    assert data["parameters"]["date"] == "2026-10-20"
+    assert data["summary"]["priced_items_count"] == 1
+    assert data["summary"]["multi_store_optimal_total"] == 3000
+    assert len(data["articles"]) == 1
+    assert data["articles"][0]["ean"] == "7790001"
+    assert data["articles"][0]["min_price"] == 1500
+    assert data["articles"][0]["weighted_subtotal"] == 3000
+
+
+def test_export_public_basket_prices_json_endpoint(tmp_path: Path):
+    """Verifies that public baskets can be exported as JSON prices reports without login."""
+    workdir = tmp_path / "public_export_json_workdir"
+    app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
+
+    config = app.config["APP_CONFIG"]
+    public_engine = create_engine(f"sqlite:///{config.get_public_db_path()}")
+    user_engine = create_engine(f"sqlite:///{config.get_user_db_path()}")
+
+    target_date = dt.date(2026, 10, 20)
+
+    with Session(public_engine) as pub_session:
+        pos = PointOfSale(
+            code="POS-PUB",
+            brand_name="Super Barato",
+            branch_name="Centro",
+            city="Comodoro Rivadavia",
+        )
+        art = Article(
+            ean="7790002",
+            name="Arroz 1kg",
+            clean_description="Arroz 1kg",
+            brand_name="Gallo",
+            package="1 kg",
+            package_amount=1.0,
+            package_unit="kg",
+        )
+        dp = DailyPrice(
+            date=target_date,
+            ean="7790002",
+            store_code="POS-PUB",
+            price=1200,
+            unit_price=1200.0,
+        )
+        pub_session.add_all([pos, art, dp])
+        pub_session.commit()
+
+    with Session(user_engine) as u_session:
+        user_repo = get_user_repository(u_session)
+        demo_user = get_or_create_demo_user(user_repo)
+        pub_basket = Basket(
+            user_id=demo_user.id,
+            name="Canasta Compartida",
+            uuid="pub-1234-uuid-test",
+            is_public=True,
+            items=[
+                BasketItem(
+                    ean="7790002",
+                    quantity=1,
+                    selected=True,
+                    numerator=1,
+                    denominator=1,
+                )
+            ],
+        )
+        priv_basket = Basket(
+            user_id=demo_user.id,
+            name="Canasta Privada",
+            uuid="priv-5678-uuid-test",
+            is_public=False,
+            items=[
+                BasketItem(
+                    ean="7790002",
+                    quantity=1,
+                    selected=True,
+                    numerator=1,
+                    denominator=1,
+                )
+            ],
+        )
+        user_repo.save_basket(pub_basket)
+        user_repo.save_basket(priv_basket)
+
+    client = app.test_client()
+
+    # 1. Anonymous access to public basket prices JSON
+    res_pub = client.get(
+        "/baskets/public/pub-1234-uuid-test/export-prices-json?city=Comodoro Rivadavia&date=2026-10-20"
+    )
+    assert res_pub.status_code == 200
+    assert "application/json" in res_pub.content_type
+    assert ".json" in res_pub.headers.get("Content-Disposition", "")
+    data_pub = json.loads(res_pub.get_data(as_text=True))
+    assert data_pub["basket"]["uuid"] == "pub-1234-uuid-test"
+    assert data_pub["summary"]["priced_items_count"] == 1
+
+    # 2. Anonymous access to private basket -> 404
+    res_priv = client.get("/baskets/public/priv-5678-uuid-test/export-prices-json")
+    assert res_priv.status_code == 404
+
+
+def test_optimize_export_json_endpoints(tmp_path: Path):
+    """Verifies that /optimize supports downloading JSON price reports via format=json and export-json."""
+    workdir = tmp_path / "optimize_export_json_workdir"
+    app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
+
+    config = app.config["APP_CONFIG"]
+    public_engine = create_engine(f"sqlite:///{config.get_public_db_path()}")
+
+    target_date = dt.date(2026, 10, 20)
+
+    with Session(public_engine) as pub_session:
+        pos = PointOfSale(
+            code="POS-OPT",
+            brand_name="Super Optimo",
+            branch_name="Sucursal 1",
+            city="Comodoro Rivadavia",
+        )
+        art = Article(
+            ean="7799991",
+            name="Yerba Mate 1kg",
+            clean_description="Yerba Mate 1kg",
+            brand_name="Playadito",
+        )
+        dp = DailyPrice(
+            date=target_date,
+            ean="7799991",
+            store_code="POS-OPT",
+            price=2500,
+            unit_price=2500.0,
+        )
+        pub_session.add_all([pos, art, dp])
+        pub_session.commit()
+
+    client = app.test_client()
+
+    # 1. /optimize?format=json
+    res_fmt = client.get(
+        "/optimize?city=Comodoro Rivadavia&date=2026-10-20&eans=7799991&format=json"
+    )
+    assert res_fmt.status_code == 200
+    assert "application/json" in res_fmt.content_type
+    assert ".json" in res_fmt.headers.get("Content-Disposition", "")
+    data_fmt = json.loads(res_fmt.get_data(as_text=True))
+    assert data_fmt["report_type"] == "basket_prices_report"
+    assert data_fmt["parameters"]["city"] == "Comodoro Rivadavia"
+    assert data_fmt["summary"]["priced_items_count"] == 1
+    assert data_fmt["articles"][0]["ean"] == "7799991"
+    assert data_fmt["articles"][0]["min_price"] == 2500
+
+    # 2. /optimize/export-json
+    res_route = client.get(
+        "/optimize/export-json?city=Comodoro Rivadavia&date=2026-10-20&eans=7799991"
+    )
+    assert res_route.status_code == 200
+    assert "application/json" in res_route.content_type
+    data_route = json.loads(res_route.get_data(as_text=True))
+    assert data_route["summary"]["multi_store_optimal_total"] == 2500
+
+    # 3. Empty request with format=json returns 400
+    res_empty = client.get("/optimize?format=json")
+    assert res_empty.status_code == 400
+    assert "error" in json.loads(res_empty.get_data(as_text=True))
+

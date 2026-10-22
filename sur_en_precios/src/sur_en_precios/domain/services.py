@@ -1,9 +1,10 @@
+import json
 import logging
 import math
 import re
 import statistics
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import bcrypt
@@ -682,6 +683,240 @@ class BasketYamlService:
             items=parsed_items,
             warnings=warnings,
         )
+
+
+def _format_store_dict(st: Any) -> Optional[Dict[str, Any]]:
+    """Helper to convert Store or PointOfSale instance to a standardized dictionary."""
+    if not st:
+        return None
+    code = getattr(st, "code", None) or getattr(st, "id", "")
+    chain = getattr(st, "chain_name", None) or getattr(st, "brand_name", "") or ""
+    store = getattr(st, "store_name", None) or getattr(st, "branch_name", "") or ""
+    city = getattr(st, "city", None)
+    if hasattr(city, "name"):
+        city = city.name
+    elif not city and hasattr(st, "place") and st.place and hasattr(st.place, "city"):
+        city = getattr(st.place.city, "name", str(st.place.city))
+    return {
+        "store_code": str(code),
+        "chain_name": str(chain),
+        "branch_name": str(store),
+        "address": getattr(st, "address", None),
+        "city": str(city) if city else None,
+    }
+
+
+class BasketPriceReportService:
+    """Service for generating comprehensive price reports for baskets in JSON format."""
+
+    @classmethod
+    def build_report_dict(
+        cls,
+        result: BasketOptimizationResult,
+        basket: Optional[Basket] = None,
+        unpriced_items: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Builds a structured dictionary containing full price optimization and basket metrics."""
+        unpriced_items = unpriced_items or []
+
+        # Determine basket info
+        basket_info: Dict[str, Any] = {
+            "id": getattr(basket, "id", None),
+            "uuid": getattr(basket, "uuid", None),
+            "name": getattr(basket, "name", "Canasta de Compras"),
+            "is_public": bool(getattr(basket, "is_public", False)),
+        }
+
+        # Summary calculation
+        best_single = None
+        if result.best_single_store:
+            st = result.best_single_store.store
+            st_dict = _format_store_dict(st) or {}
+            best_single = {
+                **st_dict,
+                "total_price": result.best_single_store.total_price,
+                "matched_items_count": result.best_single_store.matched_items_count,
+                "requested_items_count": result.best_single_store.requested_items_count,
+                "is_complete": result.best_single_store.is_complete,
+            }
+
+        savings = 0
+        savings_pct = 0.0
+        if (
+            result.best_single_store
+            and result.best_single_store.total_price > result.multi_store_total_price
+        ):
+            savings = (
+                result.best_single_store.total_price - result.multi_store_total_price
+            )
+            if result.best_single_store.total_price > 0:
+                savings_pct = round(
+                    (savings / result.best_single_store.total_price) * 100, 2
+                )
+
+        summary = {
+            "total_requested_items": len(result.requested_items),
+            "priced_items_count": len(result.item_by_item_optimal),
+            "unpriced_items_count": len(unpriced_items),
+            "best_single_store": best_single,
+            "multi_store_optimal_total": result.multi_store_total_price,
+            "potential_savings": savings,
+            "potential_savings_percent": savings_pct,
+        }
+
+        # Build articles list
+        articles_list: List[Dict[str, Any]] = []
+        for opt in result.item_by_item_optimal:
+            product = opt.product
+            cheapest_st = opt.cheapest_store
+            weight = (
+                round(opt.quantity * (opt.numerator / opt.denominator), 2)
+                if opt.denominator
+                else float(opt.quantity)
+            )
+            weighted_subtotal = (
+                round(opt.price * opt.quantity * (opt.numerator / opt.denominator))
+                if opt.denominator
+                else (opt.price * opt.quantity)
+            )
+
+            cheapest_store_dict = _format_store_dict(cheapest_st)
+
+            articles_list.append(
+                {
+                    "ean": getattr(product, "ean", ""),
+                    "name": getattr(product, "name", ""),
+                    "brand": getattr(product, "brand_name", "") or "",
+                    "category": getattr(product, "category_name", "") or "",
+                    "package": getattr(product, "package", "") or "",
+                    "quantity": opt.quantity,
+                    "numerator": opt.numerator,
+                    "denominator": opt.denominator,
+                    "weight": weight,
+                    "cheapest_store": cheapest_store_dict,
+                    "min_price": opt.price,
+                    "reference_price": opt.reference_price,
+                    "max_price": opt.max_price,
+                    "price_dispersion_pct": opt.price_dispersion,
+                    "unit_price": opt.unit_price,
+                    "unit": opt.unit,
+                    "weighted_subtotal": weighted_subtotal,
+                }
+            )
+
+        # Build complete and partial stores lists
+        complete_stores: List[Dict[str, Any]] = []
+        for st_total in result.complete_stores:
+            st = st_total.store
+            st_dict = _format_store_dict(st) or {}
+            complete_stores.append(
+                {
+                    **st_dict,
+                    "total_price": st_total.total_price,
+                    "coverage_percent": 100.0,
+                    "matched_items": st_total.matched_items_count,
+                    "item_prices": {
+                        ean: {
+                            "price": item_p.price,
+                            "unit_price": item_p.unit_price,
+                            "unit": item_p.unit,
+                            "is_lowest": item_p.is_lowest,
+                            "is_highest": item_p.is_highest,
+                            "is_above_reference": item_p.is_above_reference,
+                        }
+                        for ean, item_p in st_total.item_prices.items()
+                    },
+                }
+            )
+
+        partial_stores: List[Dict[str, Any]] = []
+        for st_total in result.partial_stores:
+            st = st_total.store
+            st_dict = _format_store_dict(st) or {}
+            coverage = (
+                round(
+                    (st_total.matched_items_count / st_total.requested_items_count)
+                    * 100,
+                    1,
+                )
+                if st_total.requested_items_count
+                else 0.0
+            )
+            partial_stores.append(
+                {
+                    **st_dict,
+                    "subtotal_price": st_total.total_price,
+                    "coverage_percent": coverage,
+                    "matched_items": st_total.matched_items_count,
+                    "total_requested_items": st_total.requested_items_count,
+                    "item_prices": {
+                        ean: {
+                            "price": item_p.price,
+                            "unit_price": item_p.unit_price,
+                            "unit": item_p.unit,
+                            "is_lowest": item_p.is_lowest,
+                            "is_highest": item_p.is_highest,
+                            "is_above_reference": item_p.is_above_reference,
+                        }
+                        for ean, item_p in st_total.item_prices.items()
+                    },
+                }
+            )
+
+        # Build substitutions
+        substitutions: List[Dict[str, Any]] = []
+        for sub in getattr(result, "suggested_substitutions", []):
+            st = sub.cheapest_store
+            substitutions.append(
+                {
+                    "original_ean": sub.original_ean,
+                    "substitute_ean": getattr(sub.product, "ean", ""),
+                    "substitute_name": getattr(sub.product, "name", ""),
+                    "substitute_brand": getattr(sub.product, "brand_name", "") or "",
+                    "cheapest_store": _format_store_dict(st),
+                    "price": sub.price,
+                    "unit_price": sub.unit_price,
+                    "unit": sub.unit,
+                    "savings_amount": sub.savings_amount,
+                    "savings_percent": sub.savings_percent,
+                }
+            )
+
+        report = {
+            "report_type": "basket_prices_report",
+            "version": "1.0",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "basket": basket_info,
+            "parameters": {
+                "city": result.city,
+                "date": (
+                    result.calculation_date.isoformat()
+                    if isinstance(result.calculation_date, (date, datetime))
+                    else str(result.calculation_date)
+                ),
+            },
+            "summary": summary,
+            "articles": articles_list,
+            "unpriced_articles": unpriced_items,
+            "complete_stores": complete_stores,
+            "partial_stores": partial_stores,
+            "suggested_substitutions": substitutions,
+        }
+        return report
+
+    @classmethod
+    def export_to_json(
+        cls,
+        result: BasketOptimizationResult,
+        basket: Optional[Basket] = None,
+        unpriced_items: Optional[List[Dict[str, Any]]] = None,
+        indent: int = 2,
+    ) -> str:
+        """Serializes price report dictionary into formatted JSON string."""
+        data = cls.build_report_dict(
+            result, basket=basket, unpriced_items=unpriced_items
+        )
+        return json.dumps(data, ensure_ascii=False, indent=indent)
 
 
 COMMON_PASSWORDS_BLACKLIST = {

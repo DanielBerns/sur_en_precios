@@ -61,6 +61,7 @@
                     <a href="{{ url_for('baskets.edit_basket', basket_id=b.id) }}" class="btn btn-sm">{{ _('Editar') }}</a>
                     <a href="{{ url_for('optimize.optimize', list_id=b.id) }}" class="btn btn-sm btn-success">{{ _('Optimizar') }}</a>
                     <a href="{{ url_for('baskets.export_basket', basket_id=b.id) }}" class="btn btn-sm btn-secondary">{{ _('YAML') }}</a>
+                    <a href="{{ url_for('baskets.export_basket_prices_json', basket_id=b.id) }}" class="btn btn-sm btn-secondary" title="{{ _('Descargar reporte de precios en JSON') }}">{{ _('Precios JSON') }}</a>
                     <form method="POST" action="{{ url_for('baskets.delete_basket', basket_id=b.id) }}" style="display:inline;" onsubmit="return confirm('¿Eliminar esta canasta?');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-danger btn-sm">{{ _('Eliminar') }}</button>

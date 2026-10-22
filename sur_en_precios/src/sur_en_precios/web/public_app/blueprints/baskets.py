@@ -1,5 +1,7 @@
 import json
 import logging
+import re
+from datetime import date
 from typing import Dict, List
 
 from flask import (
@@ -18,12 +20,15 @@ from flask_babel import gettext as _
 from sur_en_precios.domain.models_public import ArticleCard
 from sur_en_precios.domain.models_user import Basket, BasketItem
 from sur_en_precios.domain.services import (
+    BasketPriceReportService,
     BasketYamlService,
     YamlValidationError,
 )
+from sur_en_precios.use_cases.optimize_basket import OptimizeBasketUseCase
 from sur_en_precios.web.public_app.database import (
     get_catalog_repository,
     get_or_create_demo_user,
+    get_price_repository,
     get_public_session,
     get_user_repository,
     get_user_session,
@@ -318,6 +323,120 @@ def export_basket(basket_id: int):
         return redirect(url_for("baskets.edit_basket", basket_id=basket_id))
 
 
+@baskets_bp.route("/<int:basket_id>/export-prices-json")
+@login_required
+def export_basket_prices_json(basket_id: int):
+    """Exports personal basket price report as JSON."""
+    try:
+        with get_user_session() as u_session:
+            user_repo = get_user_repository(u_session)
+            user_id = _resolve_user_id(user_repo)
+            is_admin = session.get("is_admin")
+
+            if is_admin:
+                all_b = user_repo.get_all_baskets()
+                basket = next((b for b in all_b if b.id == basket_id), None)
+            else:
+                lists = user_repo.get_user_baskets(user_id=user_id)
+                basket = next((b for b in lists if b.id == basket_id), None)
+
+            if not basket:
+                flash(
+                    _("Canasta no encontrada o no tienes permisos para acceder."),
+                    "error",
+                )
+                return redirect(url_for("baskets.baskets"))
+
+            config = current_app.config["APP_CONFIG"]
+            with get_public_session() as pub_session:
+                cat_repo = get_catalog_repository(pub_session)
+                price_repo = get_price_repository(pub_session)
+
+                region = config.get_region()
+                cities = cat_repo.get_cities_for_region(region)
+
+                latest_date = price_repo.get_latest_price_date()
+                default_date_str = (
+                    latest_date.strftime("%Y-%m-%d")
+                    if latest_date
+                    else date.today().strftime("%Y-%m-%d")
+                )
+                selected_date_str = request.args.get("date") or default_date_str
+                try:
+                    target_date = date.fromisoformat(selected_date_str)
+                except ValueError:
+                    target_date = latest_date or date.today()
+                    selected_date_str = target_date.strftime("%Y-%m-%d")
+
+                req_city = request.args.get("city")
+                if req_city:
+                    matching_city = next(
+                        (c for c in cities if c.lower() == req_city.strip().lower()),
+                        None,
+                    )
+                    selected_city = matching_city or req_city.strip()
+                elif cities:
+                    selected_city = next(
+                        (c for c in cities if "comodoro" in c.lower()), cities[0]
+                    )
+                else:
+                    selected_city = "General"
+
+                active_items = [
+                    it
+                    for it in basket.items
+                    if getattr(it, "selected", True) is not False
+                ]
+
+                use_case = OptimizeBasketUseCase(cat_repo, price_repo)
+                result = use_case.execute(selected_city, target_date, active_items)
+
+                requested_products = []
+                for item in active_items:
+                    art = cat_repo.get_article_by_ean(item.ean)
+                    requested_products.append(
+                        {
+                            "ean": item.ean,
+                            "name": (
+                                getattr(art, "name", f"Producto {item.ean}")
+                                if art
+                                else f"Producto {item.ean}"
+                            ),
+                            "brand": (
+                                getattr(art, "brand_name", "") if art else ""
+                            ),
+                        }
+                    )
+
+                priced_eans = {
+                    opt.product.ean
+                    for opt in (result.item_by_item_optimal or [])
+                }
+                unpriced_items = [
+                    p for p in requested_products if p["ean"] not in priced_eans
+                ]
+
+                json_str = BasketPriceReportService.export_to_json(
+                    result=result,
+                    basket=basket,
+                    unpriced_items=unpriced_items,
+                )
+                clean_city = re.sub(r"[^a-zA-Z0-9_\-]", "_", selected_city)
+                clean_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", basket.name)
+                filename = f"reporte_precios_{clean_name}_{clean_city}_{selected_date_str}.json"
+                return Response(
+                    json_str,
+                    mimetype="application/json",
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{filename}"'
+                    },
+                )
+    except Exception as exc:
+        logger.error("Error exporting basket prices JSON %d: %s", basket_id, exc)
+        flash(_("Error al exportar el reporte de precios en formato JSON."), "error")
+        return redirect(url_for("baskets.edit_basket", basket_id=basket_id))
+
+
 @baskets_bp.route("/public/<uuid_str>/export")
 def export_public_basket(uuid_str: str):
     """Exports a public basket as YAML without requiring login."""
@@ -349,6 +468,118 @@ def export_public_basket(uuid_str: str):
     except Exception as exc:
         logger.error("Error exporting public basket %s: %s", uuid_str, exc)
         flash(_("Error al exportar la canasta pública."), "error")
+        return redirect(url_for("baskets.baskets"))
+
+
+@baskets_bp.route("/public/<uuid_str>/export-prices-json")
+def export_public_basket_prices_json(uuid_str: str):
+    """Exports a public basket price report as JSON without requiring login."""
+    try:
+        user_id = session.get("user_id")
+        is_admin = session.get("is_admin")
+
+        with get_user_session() as u_session:
+            user_repo = get_user_repository(u_session)
+            basket = user_repo.get_basket_by_uuid(uuid_str)
+            if not basket:
+                flash(_("La canasta solicitada no existe."), "error")
+                return redirect(url_for("baskets.baskets")), 404
+
+            if (
+                not basket.is_public
+                and not is_admin
+                and (not user_id or basket.user_id != user_id)
+            ):
+                flash(_("Esta canasta es privada o no existe."), "error")
+                return redirect(url_for("baskets.baskets")), 404
+
+            config = current_app.config["APP_CONFIG"]
+            with get_public_session() as pub_session:
+                cat_repo = get_catalog_repository(pub_session)
+                price_repo = get_price_repository(pub_session)
+
+                region = config.get_region()
+                cities = cat_repo.get_cities_for_region(region)
+
+                latest_date = price_repo.get_latest_price_date()
+                default_date_str = (
+                    latest_date.strftime("%Y-%m-%d")
+                    if latest_date
+                    else date.today().strftime("%Y-%m-%d")
+                )
+                selected_date_str = request.args.get("date") or default_date_str
+                try:
+                    target_date = date.fromisoformat(selected_date_str)
+                except ValueError:
+                    target_date = latest_date or date.today()
+                    selected_date_str = target_date.strftime("%Y-%m-%d")
+
+                req_city = request.args.get("city")
+                if req_city:
+                    matching_city = next(
+                        (c for c in cities if c.lower() == req_city.strip().lower()),
+                        None,
+                    )
+                    selected_city = matching_city or req_city.strip()
+                elif cities:
+                    selected_city = next(
+                        (c for c in cities if "comodoro" in c.lower()), cities[0]
+                    )
+                else:
+                    selected_city = "General"
+
+                active_items = [
+                    it
+                    for it in basket.items
+                    if getattr(it, "selected", True) is not False
+                ]
+
+                use_case = OptimizeBasketUseCase(cat_repo, price_repo)
+                result = use_case.execute(selected_city, target_date, active_items)
+
+                requested_products = []
+                for item in active_items:
+                    art = cat_repo.get_article_by_ean(item.ean)
+                    requested_products.append(
+                        {
+                            "ean": item.ean,
+                            "name": (
+                                getattr(art, "name", f"Producto {item.ean}")
+                                if art
+                                else f"Producto {item.ean}"
+                            ),
+                            "brand": (
+                                getattr(art, "brand_name", "") if art else ""
+                            ),
+                        }
+                    )
+
+                priced_eans = {
+                    opt.product.ean
+                    for opt in (result.item_by_item_optimal or [])
+                }
+                unpriced_items = [
+                    p for p in requested_products if p["ean"] not in priced_eans
+                ]
+
+                json_str = BasketPriceReportService.export_to_json(
+                    result=result,
+                    basket=basket,
+                    unpriced_items=unpriced_items,
+                )
+                clean_city = re.sub(r"[^a-zA-Z0-9_\-]", "_", selected_city)
+                clean_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", basket.name)
+                filename = f"reporte_precios_{clean_name}_{clean_city}_{selected_date_str}.json"
+                return Response(
+                    json_str,
+                    mimetype="application/json",
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{filename}"'
+                    },
+                )
+    except Exception as exc:
+        logger.error("Error exporting public basket prices JSON %s: %s", uuid_str, exc)
+        flash(_("Error al exportar el reporte de precios de la canasta pública."), "error")
         return redirect(url_for("baskets.baskets"))
 
 
