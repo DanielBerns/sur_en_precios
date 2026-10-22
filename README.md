@@ -195,74 +195,164 @@ The tool will securely prompt for the administrator password with confirmation a
 
 ## 🔄 Daily Database Updates & Architecture (UNPSJB &rarr; PythonAnywhere)
 
-Due to resource and CPU execution limits on PythonAnywhere (such as processing tarpit throttling), the daily dataset harvesting and heavy regional ETL processing **does not run directly on PythonAnywhere**.
+Due to resource, CPU execution, and storage quotas (512 MB free tier) on PythonAnywhere, daily dataset harvesting, heavy regional ETL transformations, and deduplication **do not run directly on PythonAnywhere**.
 
-Instead, the system employs an off-host batch processing architecture:
+Instead, the system employs an off-host batch processing architecture with automated chunk-based streaming:
 
 ```mermaid
 flowchart LR
     subgraph IngestionServer ["Servidor de Ingesta (UNPSJB)"]
-        SEPA["SEPA Precios Claros"] --> Harvest["run_harvest"]
-        Harvest --> ETL["run_etl"]
-        ETL --> OutputDB[("public.sqlite")]
+        SEPA["SEPA Precios Claros"] --> Harvest["1. run_harvest (Descarga remota)"]
+        Harvest --> ETL["2. run_etl (Limpieza y Taxonomía)"]
+        ETL --> Window["3. Ventana 7 Días, Deduplicación y VACUUM"]
+        Window --> LocalDB[("public.sqlite (~112 MB)")]
     end
 
     subgraph ProductionHost ["Servidor Web (PythonAnywhere)"]
-        OutputDB -->|Transferencia SCP / Rsync| WebPublicDB[("public.sqlite")]
-        WebPublicDB --> WebApp["Public Web App"]
-        UserDB[("user_data.sqlite")] --> WebApp
-        WebApp --> AdminView["/admin/system (Diagnóstico)"]
+        LocalDB -->|4. Handshake SHA-256 y API Chunks| RemoteSync["/api/admin/sync (Modo Mantenimiento)"]
+        RemoteSync --> WebPublicDB[("public.sqlite (~112 MB)")]
+        WebPublicDB --> WebApp["Public Web App (Flask)"]
+        UserDB[("user_data.sqlite (Usuarios y Listas)")] --> WebApp
+        WebApp --> AdminView["/admin/system (Monitoreo y SHA-256)"]
     end
 ```
 
-### 1. Ingestion Server Execution (UNPSJB)
+---
 
-On the dedicated processing server at the **Universidad Nacional de la Patagonia San Juan Bosco (UNPSJB)**, the daily update pipeline is executed via cron:
+### 🧩 The 4 Pipeline Phases of `run_daily_update`
 
+When `sur_en_precios.tools.run_daily_update` runs, it executes four specialized phases sequentially:
+
+1. **Harvest Phase (`run_harvest`)**:
+   - Queries `datos.produccion.gob.ar/dataset/sepa-precios` for new compressed archives.
+   - **Smart Skip Optimization**: If today's archives have no new files and `public.sqlite` is already present, the pipeline automatically skips ETL and remote upload to save CPU and network bandwidth. (Use `--force` to bypass this check).
+
+2. **Regional ETL & Data Normalization (`run_etl`)**:
+   - Filters the national dataset down to the configured target province (e.g. `AR-U` for Chubut).
+   - Standardizes messy supermarket product descriptions, extracts brand names, parses metric package sizes, and categorizes products into the 3-tier taxonomy (*Department* &rarr; *Family* &rarr; *Category*).
+
+3. **7-Day Rolling Window, Deduplication & Physical Compaction**:
+   - **7-Day Purge**: Deletes price observations older than 7 days (`delete_prices_before_date`) to maintain a lean, current price catalog.
+   - **Latest-Price Deduplication**: Deduplicates `DailyPrice` records using SQLite window functions (`deduplicate_prices_keep_latest`), keeping only the single most recent price observation per `(ean, store_code)` within that 7-day window.
+   - **Reference Price Recalculation**: Recomputes geometric mean reference prices and price dispersion metrics across all active store prices in the city.
+   - **SQLite `VACUUM` Compaction**: Reclaims deleted disk pages in SQLite. This reduces `public.sqlite` from **>296 MB down to ~112 MB** (~24 MB gzipped), guaranteeing that peak disk usage during extraction stays well below PythonAnywhere's 512 MB quota (>285 MB free headroom).
+
+4. **Automated Web Synchronization (`sync_client`)**:
+   - Governed entirely by the `sync.sync_to_web` flag in `config.yaml` (**zero CLI flags required**).
+   - **Pre-Flight SHA-256 Handshake**: Queries `GET /api/admin/sync/status` on PythonAnywhere. If the remote database SHA-256 matches the local database, upload is safely skipped (`SKIPPED_IDENTICAL_HASH`).
+   - If updated, compresses `public.sqlite` into a temporary `public.sqlite.gz`.
+   - Calls `POST /api/admin/sync/start`: Puts the public web app into maintenance mode and performs in-place `truncate(0)` on the remote database to prevent NFS lock conflicts (`.nfs*`).
+   - Streams chunks (default 2 MB) via `POST /api/admin/sync/upload`.
+   - Calls `POST /api/admin/sync/finish`: Decompresses, validates SQLite database integrity, and releases maintenance mode.
+
+---
+
+### 💻 How to Run the Daily Update Manually
+
+From the `sur_en_precios/sur_en_precios` directory on the UNPSJB computer:
+
+#### 1. Standard Run
+Executes the full pipeline, automatically skipping redundant ETL/upload if no new SEPA files exist:
 ```bash
-# Execute end-to-end harvest + ETL pipeline on UNPSJB server
-uv run python -m sur_en_precios.tools.run_daily_update --workdir ~/Info/sur_en_precios
+uv run python -m sur_en_precios.tools.run_daily_update
+```
 
-# Force re-download even if today's archive is already cached
+#### 2. Forced Regeneration
+Forces re-download of SEPA archives, full ETL processing, 7-day window deduplication, and upload regardless of cache status:
+```bash
 uv run python -m sur_en_precios.tools.run_daily_update --force
 ```
 
-This generates a fresh, indexed `public.sqlite` containing all current regional prices, stores, and reference metrics.
+#### 3. Custom Working Directory
+```bash
+uv run python -m sur_en_precios.tools.run_daily_update --workdir ~/Info/sur_en_precios
+```
 
-### 2. Automated Synchronization to Production (PythonAnywhere)
+#### 4. Standalone Catalog Upload (Push Existing Database)
+If `public.sqlite` has already been generated and you only need to push it to PythonAnywhere:
+```bash
+uv run python -m sur_en_precios.tools.sync_client
+```
 
-To overcome PythonAnywhere's 512 MB storage quota and upload limits without manual SSH/SCP access, the system provides an automated chunk-based transfer API (`/api/admin/sync`) with temporary maintenance gating:
+---
 
-1. **Configure `config.yaml` on UNPSJB**:
-   ```yaml
-   sync:
-     sync_to_web: true
-     server_url: "https://<tu_usuario>.pythonanywhere.com"
-     api_token: "tu_token_secreto_configurado_en_servidor"
-     chunk_size_bytes: 2097152   # 2 MB por fragmento
-     timeout_seconds: 900
-   ```
+### ⏰ Automating Daily Updates via Cron (UNPSJB Ingestion Server)
 
-2. **Configure `config.yaml` on PythonAnywhere**:
-   ```yaml
-   sync:
-     sync_to_web: false          # En el servidor receptor queda en false
-     api_token: "tu_token_secreto_configurado_en_servidor"
-   ```
+To run the update automatically every morning, add a cron job on the UNPSJB server:
 
-3. **Automated Daily Execution via Cron**:
-   When `sync_to_web: true` is set in `config.yaml`, running `run_daily_update` on UNPSJB automatically executes:
-   - SEPA dataset harvest
-   - Regional ETL processing
-   - Compression to `public.sqlite.gz`
-   - Secure chunked transmission to PythonAnywhere
-   - In-place extraction and SQLite verification with zero manual intervention:
-
+1. Open crontab:
    ```bash
-   uv run python -m sur_en_precios.tools.run_daily_update
+   crontab -e
    ```
 
-Because user accounts, passwords, and shopping baskets are stored in the decoupled `user_data.sqlite` database (referencing articles by standard `ean`), updating `public.sqlite` refreshes all catalog prices and products seamlessly with zero data loss.
+2. Add the scheduled execution entry (for example, daily at 06:00 AM):
+   ```cron
+   # Sur en Precios — Daily Price Harvest, ETL and Sync to PythonAnywhere
+   0 6 * * * cd /home/dberns/Projects/github/DanielBerns/sur_en_precios/sur_en_precios && /home/dberns/.local/bin/uv run python -m sur_en_precios.tools.run_daily_update >> /home/dberns/Info/sur_en_precios/logs/cron_sync.log 2>&1
+   ```
+
+> [!TIP]
+> Always use the absolute path to the `uv` executable (run `which uv` to find it, typically `~/.local/bin/uv` or `~/.cargo/bin/uv`) so that cron's restricted environment can locate it.
+
+---
+
+### ⚙️ Sync Configuration (`config.yaml`)
+
+Synchronization to the public server requires matching secret API tokens in `config.yaml` on both machines:
+
+#### 1. Generating a Secure API Token
+Run this in Python to create a secure 64-character token:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(64))"
+```
+
+#### 2. On the UNPSJB Server (`~/Info/sur_en_precios/config.yaml`)
+Enable `sync_to_web` and set the target server and credentials:
+```yaml
+sync:
+  sync_to_web: true                             # Enable remote synchronization
+  server_url: "https://<tu_usuario>.pythonanywhere.com"
+  api_token: "TU_TOKEN_SECRETO_GENERADO_DE_64_CARACTERES"
+  chunk_size_bytes: 2097152                    # 2 MB per stream chunk
+  timeout_seconds: 900                         # 15 minutes max
+```
+
+#### 3. On the PythonAnywhere Server (`~/Info/sur_en_precios/config.yaml`)
+On the receiving server, `sync_to_web` must be `false`:
+```yaml
+sync:
+  sync_to_web: false                            # Web host is receiver only
+  api_token: "TU_TOKEN_SECRETO_GENERADO_DE_64_CARACTERES"
+```
+
+> [!NOTE]
+> All sync activation is controlled **strictly via `config.yaml`** (`sync.sync_to_web: true`). There are intentionally no CLI flags to prevent accidental sync overrides or credential exposure in process lists.
+
+---
+
+### 📊 Monitoring, Logs & Verification
+
+#### 1. Checking the Cron Execution Log
+```bash
+tail -n 50 ~/Info/sur_en_precios/logs/cron_sync.log
+```
+
+#### 2. Querying Structured Telemetry (`log_analyzer`)
+All pipeline executions and sync results are recorded in `control.sqlite`. Inspect them using the built-in analyzer:
+```bash
+# Print summary of recent harvest and sync jobs
+uv run python -m sur_en_precios.tools.log_analyzer --summary
+
+# Tail recent execution log entries
+uv run python -m sur_en_precios.tools.log_analyzer --tail 25
+```
+
+#### 3. Remote Verification in Web Dashboard
+Log in as administrator and visit `/admin/system` (e.g., `https://<tu_usuario>.pythonanywhere.com/admin/system`):
+- **Database Status**: File size, last modification time, and SQLite WAL mode.
+- **SHA-256 Checksum**: Displays the active remote database hash matching the local catalog.
+- **Catalog Metrics**: Total products, active stores, and regional price counts.
+- **Sync History**: Audit trail of recent remote uploads with timestamps and file sizes.
 
 ---
 
@@ -337,7 +427,8 @@ application = create_app()
 | Tool | Module Path | Purpose | Key Arguments |
 | :--- | :--- | :--- | :--- |
 | **Create Admin** | `sur_en_precios.tools.create_admin` | Bootstraps the unique server administrator. | `--username`, `--password`, `--workdir` |
-| **Daily Update** | `sur_en_precios.tools.run_daily_update` | Orchestrates daily harvest + regional ETL + logging. | `--workdir`, `--force` |
+| **Daily Update** | `sur_en_precios.tools.run_daily_update` | Orchestrates daily harvest + regional ETL + logging + sync. | `--workdir`, `--force` |
+| **Sync Client** | `sur_en_precios.tools.sync_client` | Streams `public.sqlite` directly to web server via chunks. | `--workdir` |
 | **Run Harvest** | `sur_en_precios.tools.run_harvest` | Scrapes remote SEPA web portal and downloads archives. | `--workdir`, `--force`, `--create` |
 | **Run ETL** | `sur_en_precios.tools.run_etl` | Processes raw CSV files into regional `public.sqlite`. | `--region`, `--date`, `--workdir`, `--create` |
 | **Log Analyzer** | `sur_en_precios.tools.log_analyzer` | Queries and filters structured JSON execution logs. | `--summary`, `--level`, `--search`, `--tail` |

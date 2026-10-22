@@ -1,5 +1,6 @@
 """Client tool for streaming compressed public.sqlite chunks from UNPSJB to PythonAnywhere."""
 
+import argparse
 import asyncio
 import gzip
 import hashlib
@@ -8,6 +9,7 @@ import logging
 import math
 import shutil
 import sqlite3
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -293,3 +295,25 @@ def run_sync_catalog_to_web(
     """Synchronous entry point for running the catalog sync."""
     config = read_config(workdir_override=workdir_override, should_create_override=False)
     return asyncio.run(sync_catalog_to_web(config))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Sincroniza el catálogo public.sqlite local con el servidor público PythonAnywhere."
+    )
+    parser.add_argument(
+        "--workdir", help="Directorio de trabajo (por defecto ~/Info/sur_en_precios)"
+    )
+    args = parser.parse_args()
+    workdir_path = Path(args.workdir).resolve() if args.workdir else None
+
+    result = run_sync_catalog_to_web(workdir_override=workdir_path)
+    status = result.get("status")
+    print(f"Resultado de sincronización: {status}")
+    if status in ("ERROR", "FAILED"):
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+
