@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Sur en Precios — Monitoreo y Optimización de Precios de Supermercados | UNPSJB{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero" id="inicio">
+    <div class="hero-badge">
+        🏛️ UNPSJB · Facultad de Ciencias Económicas · Observatorio de Economía
+    </div>
+    
+    <div style="margin: 0.5rem 0 1rem 0; display: flex; justify-content: center; align-items: center;">
+        <img src="{{ url_for('static', filename='img/chakana.svg') }}" alt="Chakana Sur en Precios" width="90" height="90" class="brand-logo" style="filter: drop-shadow(0 4px 12px rgba(255, 0, 0, 0.45));">
+    </div>
+
+    <h1 class="hero-title">Sur en <span>Precios</span></h1>
+    
+    <p class="hero-subtitle">
+        Plataforma pública de monitoreo sistemático, análisis estadístico y optimización inteligente de precios de supermercados para la Patagonia. Información transparente al servicio de las familias y la comunidad.
+    </p>
+
+    <!-- Hero Search Bar -->
+    <div class="hero-search-card" id="buscador">
+        <form method="GET" action="{{ url_for('catalog.index') }}">
+            <div class="hero-search-bar">
+                <input type="text" name="q" placeholder="Buscar por producto, marca o código EAN (ej: leche, arroz, fideos)..." autofocus required>
+                <button type="submit" class="btn btn-lg">Buscar 🔍</button>
+            </div>
+            
+            <div class="mode-selector" style="justify-content: center; margin-bottom: 0.5rem;">
+                <label>
+                    <input type="radio" name="mode" value="fuzzy" checked>
+                    {{ _('Búsqueda flexible (aproximada)') }}
+                </label>
+                <label style="margin-left: 1.5rem;">
+                    <input type="radio" name="mode" value="exact">
+                    {{ _('Búsqueda exacta') }}
+                </label>
+            </div>
+
+            <div class="hero-chips">
+                <span class="hero-chips-label">Búsquedas sugeridas:</span>
+                <a href="{{ url_for('catalog.index', q='leche') }}" class="chip">🥛 Leche</a>
+                <a href="{{ url_for('catalog.index', q='arroz') }}" class="chip">🍚 Arroz</a>
+                <a href="{{ url_for('catalog.index', q='fideos') }}" class="chip">🍝 Fideos</a>
+                <a href="{{ url_for('catalog.index', q='aceite') }}" class="chip">🌻 Aceite</a>
+                <a href="{{ url_for('catalog.index', q='harina') }}" class="chip">🌾 Harina</a>
+                <a href="{{ url_for('catalog.index', q='yerba') }}" class="chip">🧉 Yerba</a>
+                <a href="{{ url_for('catalog.index', q='azucar') }}" class="chip">🍬 Azúcar</a>
+                <a href="{{ url_for('catalog.index', q='detergente') }}" class="chip">🧼 Detergente</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="hero-actions" style="margin-top: 2rem;">
+        <a href="{{ url_for('catalog.departments') }}" class="btn btn-secondary">📂 Explorar Categorías</a>
+        <a href="{{ url_for('baskets.baskets') }}" class="btn btn-secondary">🛒 Mis Canastas</a>
+        <a href="{{ url_for('optimize.optimize') }}" class="btn btn-success">⚡ Optimizar Precios</a>
+        <a href="{{ url_for('catalog.help') }}" class="btn btn-outline">📖 Guía y Ayuda</a>
+    </div>
+</section>
+
+<!-- System Features Section -->
+<section id="que-es">
+    <div class="section-header">
+        <span class="section-tag">Herramientas Públicas</span>
+        <h2 class="section-title">¿Cómo te ayuda Sur en Precios?</h2>
+        <p class="section-desc">
+            Diseñado como un servicio para la comunidad de la cuenca del Golfo San Jorge y la región patagónica, integrando datos oficiales con análisis avanzado.
+        </p>
+    </div>
+
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">🔍</div>
+            <h3>Comparador y Catálogo</h3>
+            <p>
+                Buscador ágil con tolerancia a faltas y abreviaturas sobre miles de artículos en góndola. Permite consultar al instante precios por comercio y precios por unidad de medida (kilo, litro).
+            </p>
+            <a href="{{ url_for('catalog.search_view') }}" class="btn btn-sm btn-secondary" style="align-self: flex-start;">Ver Buscador &rarr;</a>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Precios de Referencia</h3>
+            <p>
+                Calculamos la <strong>media geométrica</strong> diaria oficial (SEPA) para amortiguar precios extremos y proveer un valor de referencia objetivo, junto al porcentaje de dispersión entre supermercados.
+            </p>
+            <a href="{{ url_for('catalog.help') }}#metricas" class="btn btn-sm btn-secondary" style="align-self: flex-start;">Ver Metodología &rarr;</a>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">🛒</div>
+            <h3>Canastas Desacopladas</h3>
+            <p>
+                Creá tus listas de compras habituales. Gracias a nuestro esquema desacoplado mediante código de barras EAN, tus canastas se mantienen intactas día tras día y podés compartirlas públicamente.
+            </p>
+            <a href="{{ url_for('baskets.baskets') }}" class="btn btn-sm btn-secondary" style="align-self: flex-start;">Gestionar Canastas &rarr;</a>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Optimizador Inteligente</h3>
+            <p>
+                Compara tu canasta completa entre todas las cadenas comerciales de la localidad. Te indica cuál es el supermercado más económico para comprar todo junto y cuánto ahorrás dividiendo la compra.
+            </p>
+            <a href="{{ url_for('optimize.optimize') }}" class="btn btn-sm btn-success" style="align-self: flex-start;">Probar Optimizador &rarr;</a>
+        </div>
+    </div>
+</section>
+
+<!-- Departments Navigation Section -->
+{% if departments %}
+<section id="rubros" style="margin: 3.5rem 0;">
+    <div class="section-header">
+        <span class="section-tag">Clasificación Taxonómica</span>
+        <h2 class="section-title">Navegar por Rubros y Departamentos</h2>
+        <p class="section-desc">
+            Explorá el catálogo clasificado en departamentos, familias y categorías para encontrar los productos que necesitás.
+        </p>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center;">
+        {% for dept in departments %}
+        <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" class="card" style="padding: 1rem 1.5rem; margin-bottom: 0; text-decoration: none; color: inherit; display: flex; align-items: center; gap: 0.6rem; transition: all 0.2s ease;">
+            <span style="font-size: 1.3rem;">📦</span>
+            <div>
+                <strong style="color: var(--accent);">{{ dept.name }}</strong>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Institutional Framework Section -->
+<section id="institucional" style="margin-top: 4rem;">
+    <div class="section-header">
+        <span class="section-tag">Respaldo Institucional</span>
+        <h2 class="section-title">Marco Institucional y Académico</h2>
+        <p class="section-desc">
+            Sur en Precios es una iniciativa gestada desde la universidad pública nacional, orientada a la investigación socioeconómica, la transparencia y la soberanía informativa en la Patagonia.
+        </p>
+    </div>
+
+    <div class="institutional-grid">
+        <!-- UNPSJB -->
+        <article class="inst-box" id="unpsjb">
+            <span class="badge badge-active">Universidad Pública</span>
+            <h3 style="margin-top: 0.75rem;">
+                🏛️ Universidad Nacional de la Patagonia San Juan Bosco
+            </h3>
+            <p>
+                La <strong>UNPSJB</strong> es la principal casa de altos estudios de la Patagonia central y austral, con sede central en Comodoro Rivadavia y sedes universitarias en Trelew, Puerto Madryn y Esquel. Como universidad pública, gratuita y cogobernada, su misión prioritaria es la formación de profesionales comprometidos, la investigación científica y la transferencia tecnológica orientada al desarrollo socioeconómico sostenible y equitativo de los pueblos patagónicos.
+            </p>
+            <div class="inst-meta">
+                <span>📍 <strong>Sede Central:</strong> Ruta Provincial 3 Km 4, Comodoro Rivadavia, Chubut</span>
+                <span>🌐 <strong>Sitio oficial:</strong> <a href="http://www.unp.edu.ar" target="_blank" rel="noopener" style="color: var(--accent);">www.unp.edu.ar</a></span>
+            </div>
+        </article>
+
+        <!-- Facultad de Ciencias Económicas -->
+        <article class="inst-box" id="fce">
+            <span class="badge badge-active">Unidad Académica Responsable</span>
+            <h3 style="margin-top: 0.75rem;">
+                📈 Facultad de Ciencias Económicas (FCE - UNPSJB)
+            </h3>
+            <p>
+                La <strong>Facultad de Ciencias Económicas</strong> es una institución formadora de excelencia en ciencias económicas, administración y finanzas en la región patagónica. A través de sus carreras de grado y posgrado, institutos y equipos de extensión, lidera el análisis riguroso de la estructura económica regional, la dinámica del mercado laboral, los salarios reales, las cadenas de valor y el impacto inflacionario en los hogares patagónicos.
+            </p>
+            <div class="inst-meta">
+                <span>🎓 <strong>Área:</strong> Ciencias Económicas, Finanzas y Desarrollo Regional</span>
+                <span>📚 <strong>Sede:</strong> Edificio de Aulas, Km 4, Comodoro Rivadavia</span>
+            </div>
+        </article>
+
+        <!-- Observatorio de Economía -->
+        <article class="inst-box" id="oernp">
+            <span class="badge badge-active">Equipo de Investigación & Desarrollo</span>
+            <h3 style="margin-top: 0.75rem;">
+                🔭 Observatorio de Economía de los Recursos Naturales de la Patagonia
+            </h3>
+            <p>
+                El <strong>Observatorio de Economía de los Recursos Naturales de la Patagonia</strong> (OERNP / Observatorio de Economía de la FCE) es el espacio técnico especializado en el relevamiento continuo, análisis cuantitativo y difusión de variables socioeconómicas, precios al consumidor, hidrocarburos, pesca, energía y actividad comercial de la cuenca. Es el equipo científico impulsor del proyecto <em>Sur en Precios</em>.
+            </p>
+            <div class="inst-meta">
+                <span>✉️ <strong>Correo electrónico:</strong> <a href="mailto:observatorioFCE@gmail.com" style="color: var(--accent);">observatorioFCE@gmail.com</a></span>
+                <span>📷 <strong>Instagram oficial:</strong> <a href="https://www.instagram.com/observatoriofce.unpsjb" target="_blank" rel="noopener" style="color: var(--accent);">@observatoriofce.unpsjb</a></span>
+                <span>📞 <strong>Contacto telefónico:</strong> (0297) 537-2525</span>
+            </div>
+        </article>
+    </div>
+</section>
+
+<!-- Reserved Spaces for Interdisciplinary Collaboration -->
+<section id="espacios-reservados" style="margin-top: 4rem;">
+    <div class="section-header">
+        <span class="section-tag" style="color: #ce93d8;">Alianzas Interdisciplinarias</span>
+        <h2 class="section-title">Espacios Reservados para Articulación Académica</h2>
+        <p class="section-desc">
+            Espacios formalmente asignados dentro de la plataforma para la integración y colaboración técnica, científica y comunitaria de facultades y grupos de investigación de la UNPSJB.
+        </p>
+    </div>
+
+    <div class="grid">
+        <!-- Facultad de Ingeniería -->
+        <div class="reserved-card">
+            <span class="badge badge-reserved">Espacio Reservado</span>
+            <h3>⚙️ Facultad de Ingeniería (UNPSJB)</h3>
+            <p>
+                Espacio reservado para la articulación técnica en arquitectura de sistemas, ingeniería de software distribuida, optimización de infraestructura cloud, seguridad informática y tratamiento masivo de datos abiertos para la optimización de procesos de monitoreo.
+            </p>
+            <div style="margin-top: 1rem; font-size: 0.8rem; color: #b39ddb;">
+                🔗 <em>Articulación en diseño tecnológico e infraestructura</em>
+            </div>
+        </div>
+
+        <!-- Grupo de Investigación en Procesamiento de la Información y Sensores -->
+        <div class="reserved-card">
+            <span class="badge badge-reserved">Espacio Reservado</span>
+            <h3>🧠 Grupo de Investigación en Procesamiento de la Información y Sensores</h3>
+            <p>
+                Espacio reservado para la cooperación en modelado matemático avanzado, procesamiento estadístico de señales y datos, algoritmos de aprendizaje computacional para series temporales de precios y detección de patrones y anomalías en las cadenas de comercialización.
+            </p>
+            <div style="margin-top: 1rem; font-size: 0.8rem; color: #b39ddb;">
+                🔗 <em>Articulación en modelos predictivos y analítica computacional</em>
+            </div>
+        </div>
+
+        <!-- Facultad de Humanidades y Ciencias Sociales -->
+        <div class="reserved-card">
+            <span class="badge badge-reserved">Espacio Reservado</span>
+            <h3>👥 Facultad de Humanidades y Ciencias Sociales (UNPSJB)</h3>
+            <p>
+                Espacio reservado para el estudio cualitativo y cuantitativo del impacto social del costo de vida, dinámicas comunitarias de consumo, democratización del acceso a bienes esenciales, género y economía del cuidado, y comunicación comunitaria en el territorio.
+            </p>
+            <div style="margin-top: 1rem; font-size: 0.8rem; color: #b39ddb;">
+                🔗 <em>Articulación en estudios socioterritoriales y comunitarios</em>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Methodology & Data Transparency -->
+<section id="metodologia" class="card" style="margin-top: 4rem; background: linear-gradient(180deg, #1c2541 0%, #131c33 100%);">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+        <span style="font-size: 1.8rem;">📐</span>
+        <div>
+            <h2 style="margin: 0; color: var(--accent);">Transparencia Metodológica y Datos Oficiales</h2>
+            <small style="color: var(--text-muted);">Fuentes públicas, reproducibilidad científica y rigor estadístico</small>
+        </div>
+    </div>
+    
+    <div class="grid" style="margin-top: 1.5rem;">
+        <div>
+            <h4 style="color: #ffffff; margin-top: 0;">Fuente Oficial SEPA</h4>
+            <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.55;">
+                Los datos son recopilados diariamente a partir de los conjuntos de datos abiertos del <strong>Sistema Electrónico de Publicidad de Precios Argentinos (SEPA - Precios Claros)</strong> provistos por la Secretaría de Comercio de la Nación. Se filtran rigurosamente las sucursales habilitadas en la región patagónica.
+            </p>
+        </div>
+
+        <div>
+            <h4 style="color: #ffffff; margin-top: 0;">Media Geométrica de Precios</h4>
+            <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.55;">
+                Siguiendo las mejores prácticas internacionales en elaboración de índices de precios, el <strong>Precio de Referencia</strong> de cada producto se calcula utilizando la media geométrica de todas las cotizaciones del día. Esto evita que una oferta aislada o un precio tipográfico anómalo altere el valor orientativo.
+            </p>
+        </div>
+    </div>
+
+    <div style="border-top: 1px solid #3a506b; padding-top: 1.25rem; margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <span style="font-size: 0.9rem; color: #a0aec0;">
+            ¿Tenés dudas sobre cómo utilizar la plataforma o interpretar los indicadores?
+        </span>
+        <a href="{{ url_for('catalog.help') }}" class="btn btn-sm btn-outline">Consultar la Guía de Ayuda Completa &rarr;</a>
+    </div>
+</section>
+{% endblock %}

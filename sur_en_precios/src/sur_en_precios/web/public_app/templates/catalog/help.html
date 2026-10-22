@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}Guía y Ayuda de Uso — Sur en Precios | UNPSJB{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="color: var(--accent); margin: 0 0 0.5rem 0; font-size: 2.2rem; display: flex; align-items: center; gap: 0.75rem;">
+            <img src="{{ url_for('static', filename='img/chakana.svg') }}" alt="Chakana" width="36" height="36">
+            Centro de Ayuda y Guía de Uso
+        </h1>
+        <p style="color: var(--text-muted); margin: 0; font-size: 1.05rem;">
+            Todo lo que necesitás saber para aprovechar al máximo las herramientas de <strong>Sur en Precios</strong>.
+        </p>
+    </div>
+    <a href="{{ url_for('catalog.index') }}" class="btn btn-secondary">&larr; Volver al Inicio</a>
+</div>
+
+<!-- Table of Contents Quick Nav -->
+<div class="card" style="padding: 1.25rem 1.75rem; margin-bottom: 2rem; background: rgba(19, 34, 63, 0.75);">
+    <strong style="color: var(--accent); font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.75rem;">
+        Índice de Contenidos:
+    </strong>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem;">
+        <a href="#introduccion" class="chip">1. ¿Qué es Sur en Precios?</a>
+        <a href="#busqueda" class="chip">2. Cómo Buscar Productos</a>
+        <a href="#metricas" class="chip">3. Estadísticas y Precios de Referencia</a>
+        <a href="#canastas" class="chip">4. Gestión de Canastas de Compra</a>
+        <a href="#optimizador" class="chip">5. Optimizador de Precios</a>
+        <a href="#datos" class="chip">6. Origen y Actualización de Datos</a>
+        <a href="#faq" class="chip">7. Preguntas Frecuentes</a>
+        <a href="#soporte" class="chip">8. Contacto y Soporte</a>
+    </div>
+</div>
+
+<!-- Section 1: Intro -->
+<article class="card" id="introduccion">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>1.</span> ¿Qué es Sur en Precios?
+    </h2>
+    <p style="font-size: 1rem; line-height: 1.6; color: var(--text);">
+        <strong>Sur en Precios</strong> es una plataforma pública, gratuita y de libre acceso desarrollada por el <strong>Observatorio de Economía de los Recursos Naturales de la Patagonia</strong>, perteneciente a la <strong>Facultad de Ciencias Económicas</strong> de la <strong>Universidad Nacional de la Patagonia San Juan Bosco (UNPSJB)</strong>.
+    </p>
+    <p style="font-size: 1rem; line-height: 1.6; color: var(--text);">
+        Su propósito es brindar a la ciudadanía, organizaciones comunitarias, comercios e investigadores herramientas transparentes e inteligentes para monitorear, comparar y optimizar las compras cotidianas en los supermercados de la región patagónica.
+    </p>
+</article>
+
+<!-- Section 2: Search -->
+<article class="card" id="busqueda">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>2.</span> Cómo Buscar Productos en el Catálogo
+    </h2>
+    <p style="line-height: 1.6;">
+        El buscador de Sur en Precios te permite localizar cualquier producto comercializado en las cadenas de la región mediante tres modalidades:
+    </p>
+
+    <div class="grid" style="margin: 1.5rem 0;">
+        <div style="background: #13223f; border: 1px solid #3a506b; border-radius: 8px; padding: 1.25rem;">
+            <h4 style="color: var(--accent); margin-top: 0;">Búsqueda Flexible (Aproximada)</h4>
+            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.5;">
+                Es la opción predeterminada. Tolera faltas ortográficas, palabras desordenadas y acentos. Por ejemplo, al escribir <code>"leche descr"</code> encontrará <em>"Leche Descremada UAT"</em> de diferentes marcas.
+            </p>
+        </div>
+
+        <div style="background: #13223f; border: 1px solid #3a506b; border-radius: 8px; padding: 1.25rem;">
+            <h4 style="color: var(--accent); margin-top: 0;">Búsqueda Exacta</h4>
+            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.5;">
+                Busca únicamente coincidencias exactas de términos o frases. Es ideal cuando conocés la denominación precisa del artículo o la marca comercial específica.
+            </p>
+        </div>
+
+        <div style="background: #13223f; border: 1px solid #3a506b; border-radius: 8px; padding: 1.25rem;">
+            <h4 style="color: var(--accent); margin-top: 0;">Búsqueda por Código EAN (Código de Barras)</h4>
+            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.5;">
+                Ingresá el número de 13 dígitos que figura debajo del código de barras del producto (ej: <code>7790070411707</code>). El sistema localizará de forma inequívoca el producto exacto y todas sus cotizaciones.
+            </p>
+        </div>
+    </div>
+
+    <div style="background: rgba(72, 202, 228, 0.1); border-left: 4px solid var(--accent); padding: 0.75rem 1rem; border-radius: 4px;">
+        💡 <strong>Consejo de búsqueda:</strong> También podés explorar por rubros completos desde la sección <a href="{{ url_for('catalog.departments') }}" style="color: var(--accent); font-weight: bold;">Categorías</a>, navegando por departamentos (Almacén, Lácteos, Bebidas, Limpieza, etc.).
+    </div>
+</article>
+
+<!-- Section 3: Metrics -->
+<article class="card" id="metricas">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>3.</span> Estadísticas de Precio y Cómo Interpretarlas
+    </h2>
+    <p style="line-height: 1.6;">
+        Al hacer clic en cualquier artículo o en su código EAN 📊, se abrirá la ventana de análisis detallado. Allí encontrarás los siguientes indicadores clave:
+    </p>
+
+    <div class="stats-grid" style="margin: 1.5rem 0;">
+        <div class="stat-card stat-min">
+            <span class="badge badge-lowest" style="margin-bottom: 0.5rem;">Precio Mínimo</span>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0 0 0;">
+                El precio más bajo registrado entre todas las sucursales relevadas ese día. Indica en qué comercio conviene comprar este artículo en particular.
+            </p>
+        </div>
+
+        <div class="stat-card stat-ref">
+            <span class="badge badge-ref" style="margin-bottom: 0.5rem;">Precio de Referencia</span>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0 0 0;">
+                Calculado mediante la <strong>media geométrica</strong> de los precios vigentes. Amortigua valores extremos o promociones atípicas para ofrecer un valor representativo del mercado.
+            </p>
+        </div>
+
+        <div class="stat-card stat-max">
+            <span class="badge badge-highest" style="margin-bottom: 0.5rem;">Precio Máximo</span>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0 0 0;">
+                El precio más elevado detectado en góndola. Permite alertar al consumidor sobre comercios con sobreprecios significativos para ese bien.
+            </p>
+        </div>
+    </div>
+
+    <h4 style="color: #ffffff; margin-top: 1.5rem;">¿Qué es la Dispersión de Precios?</h4>
+    <p style="line-height: 1.6; color: var(--text-muted);">
+        La <strong>dispersión de precios</strong> expresa en porcentaje la brecha que existe entre el precio más bajo y el más alto de un mismo producto en la misma ciudad. Una dispersión del 30% significa que podés ahorrar hasta un 30% simplemente eligiendo el comercio adecuado.
+    </p>
+
+    <h4 style="color: #ffffff; margin-top: 1.5rem;">Precio Unitario Normalizado</h4>
+    <p style="line-height: 1.6; color: var(--text-muted);">
+        Para facilitar la comparación objetiva entre distintos formatos de envases, nuestro sistema descompone la presentación y calcula el precio por <strong>kilo ($/kg)</strong>, <strong>litro ($/L)</strong> o <strong>unidad ($/u)</strong>.
+    </p>
+</article>
+
+<!-- Section 4: Baskets -->
+<article class="card" id="canastas">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>4.</span> Gestión de Canastas de Compra
+    </h2>
+    <p style="line-height: 1.6;">
+        Una <strong>Canasta</strong> es una lista personalizada de artículos con sus cantidades correspondientes (por ejemplo, tu compra quincenal o la canasta básica de tu hogar).
+    </p>
+
+    <div class="grid" style="margin: 1.5rem 0;">
+        <div style="background: #13223f; border: 1px solid #3a506b; border-radius: 8px; padding: 1.25rem;">
+            <h4 style="color: var(--accent); margin-top: 0;">🔒 Persistencia Garantizada por EAN</h4>
+            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.5;">
+                Los catálogos de supermercados se renuevan diariamente. Para evitar que tus canastas se borren o se rompan, cada artículo se vincula directamente por su <strong>código EAN</strong> estándar. Aunque la base de precios se reconstruya cada día, tu canasta siempre cargará con los precios más nuevos.
+            </p>
+        </div>
+
+        <div style="background: #13223f; border: 1px solid #3a506b; border-radius: 8px; padding: 1.25rem;">
+            <h4 style="color: var(--accent); margin-top: 0;">🌐 Canastas Públicas y Enlaces Compartibles</h4>
+            <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.5;">
+                Podés marcar cualquier canasta como <strong>Pública</strong>. El sistema generará un enlace único (UUID) que podés compartir con familiares, vecinos, clubes o comedores para que cualquier persona pueda consultar u optimizar la lista sin necesidad de registrarse.
+            </p>
+        </div>
+    </div>
+
+    <div style="margin-top: 1rem;">
+        <a href="{{ url_for('baskets.baskets') }}" class="btn btn-sm btn-secondary">Ir a Mis Canastas &rarr;</a>
+    </div>
+</article>
+
+<!-- Section 5: Optimizer -->
+<article class="card" id="optimizador">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>5.</span> Optimizador de Precios Multi-Comercio
+    </h2>
+    <p style="line-height: 1.6;">
+        El <strong>Optimizador</strong> es el motor de cálculo inteligente de Sur en Precios. Al ingresar una lista de productos o seleccionar una de tus canastas, el optimizador evalúa los precios en todas las sucursales activas y te presenta:
+    </p>
+
+    <ol style="line-height: 1.8; color: var(--text); padding-left: 1.5rem;">
+        <li><strong>Mejor Opción en Comercio Único:</strong> Te indica en qué supermercado conviene hacer toda la compra junta si preferís no trasladarte entre distintas sucursales.</li>
+        <li><strong>Combinación Óptima Multi-Comercio:</strong> Desglosa exactamente qué productos comprar en cada supermercado para maximizar el ahorro económico total.</li>
+        <li><strong>Ahorro Total y Comparativa:</strong> Muestra en pesos y en porcentaje cuánto ahorrás respecto a la alternativa más costosa.</li>
+    </ol>
+
+    <div style="margin-top: 1rem;">
+        <a href="{{ url_for('optimize.optimize') }}" class="btn btn-sm btn-success">Abrir el Optimizador &rarr;</a>
+    </div>
+</article>
+
+<!-- Section 6: Data Origin -->
+<article class="card" id="datos">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>6.</span> Origen y Actualización de los Datos
+    </h2>
+    <p style="line-height: 1.6;">
+        La información proviene de la base de datos oficial del <strong>Sistema Electrónico de Publicidad de Precios Argentinos (SEPA - Precios Claros)</strong>, bajo la órbita de la Secretaría de Comercio de la Nación.
+    </p>
+    <ul style="line-height: 1.7; color: var(--text-muted); padding-left: 1.5rem;">
+        <li><strong>Frecuencia:</strong> Los precios son publicados obligatoriamente por las cadenas de supermercados y cosechados de manera automatizada por el sistema cada día.</li>
+        <li><strong>Normalización:</strong> Nuestro motor de procesamiento limpia y estandariza los nombres de productos, aísla las marcas registradas, clasifica los envases en unidades métricas y los agrupa en una taxonomía de tres niveles.</li>
+        <li><strong>Cobertura geográfica:</strong> Abarca sucursales de supermercados e hipermercados con presencia en Comodoro Rivadavia, Rada Tilly y localidades de la región patagónica.</li>
+    </ul>
+</article>
+
+<!-- Section 7: FAQ -->
+<article class="card" id="faq">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>7.</span> Preguntas Frecuentes (FAQ)
+    </h2>
+
+    <div style="display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1.25rem;">
+        <div style="background: #13223f; border-left: 4px solid var(--accent); padding: 1rem 1.25rem; border-radius: 6px;">
+            <h4 style="margin: 0 0 0.5rem 0; color: #ffffff;">¿Tiene algún costo utilizar Sur en Precios?</h4>
+            <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem; line-height: 1.5;">
+                No, es 100% libre, público y gratuito. Es una iniciativa académica y de extensión de la Universidad Nacional de la Patagonia San Juan Bosco y la Facultad de Ciencias Económicas.
+            </p>
+        </div>
+
+        <div style="background: #13223f; border-left: 4px solid var(--accent); padding: 1rem 1.25rem; border-radius: 6px;">
+            <h4 style="margin: 0 0 0.5rem 0; color: #ffffff;">¿Es obligatorio registrarse para consultar precios?</h4>
+            <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem; line-height: 1.5;">
+                No. Cualquier persona puede buscar productos, ver estadísticas y comparar precios sin crear ninguna cuenta. El registro de usuario solo es necesario si deseás guardar canastas privadas permanentes en tu perfil.
+            </p>
+        </div>
+
+        <div style="background: #13223f; border-left: 4px solid var(--accent); padding: 1rem 1.25rem; border-radius: 6px;">
+            <h4 style="margin: 0 0 0.5rem 0; color: #ffffff;">¿Qué comercios están incluidos?</h4>
+            <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem; line-height: 1.5;">
+                Están incluidas todas las cadenas de supermercados que tienen la obligación legal de reportar sus precios diarios al sistema nacional SEPA (Precios Claros).
+            </p>
+        </div>
+
+        <div style="background: #13223f; border-left: 4px solid var(--accent); padding: 1rem 1.25rem; border-radius: 6px;">
+            <h4 style="margin: 0 0 0.5rem 0; color: #ffffff;">¿Por qué a veces un producto no tiene precio en alguna sucursal?</h4>
+            <p style="margin: 0; color: var(--text-muted); font-size: 0.95rem; line-height: 1.5;">
+                Puede ocurrir que la sucursal no comercialice ese producto en particular o que se encuentre temporalmente fuera de stock en el reporte oficial del día.
+            </p>
+        </div>
+    </div>
+</article>
+
+<!-- Section 8: Support & Institutional Contact -->
+<article class="card" id="soporte" style="background: linear-gradient(135deg, #1c2541 0%, #151e38 100%);">
+    <h2 style="color: var(--accent); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+        <span>8.</span> Contacto Institucional y Soporte
+    </h2>
+    <p style="line-height: 1.6; color: var(--text);">
+        Si tenés consultas metodológicas, sugerencias para mejorar la plataforma o estás interesado en cooperaciones de investigación y extensión académica, podés comunicarte directamente con el equipo:
+    </p>
+
+    <div class="grid" style="margin-top: 1.5rem;">
+        <div style="background: #0b132b; border: 1px solid #3a506b; border-radius: 8px; padding: 1.25rem;">
+            <h4 style="color: #ffffff; margin-top: 0;">Observatorio de Economía (OERNP)</h4>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                Facultad de Ciencias Económicas — UNPSJB<br>
+                Ciudad Universitaria, Ruta 3 Km 4, Comodoro Rivadavia, Chubut
+            </p>
+            <p style="font-size: 0.9rem; color: var(--accent); margin: 0;">
+                ✉️ <a href="mailto:observatorioFCE@gmail.com" style="color: var(--accent);">observatorioFCE@gmail.com</a>
+            </p>
+            <p style="font-size: 0.9rem; color: var(--accent); margin: 0.5rem 0 0 0;">
+                📷 <a href="https://www.instagram.com/observatoriofce.unpsjb" target="_blank" rel="noopener" style="color: var(--accent);">@observatoriofce.unpsjb</a>
+            </p>
+        </div>
+
+        <div style="background: #0b132b; border: 1px solid #3a506b; border-radius: 8px; padding: 1.25rem;">
+            <h4 style="color: #ffffff; margin-top: 0;">Atención a la Comunidad</h4>
+            <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+                Teléfono de contacto institucional:<br>
+                <strong style="color: var(--text);">(0297) 537-2525</strong>
+            </p>
+            <p style="font-size: 0.85rem; color: #718096; margin-top: 1rem;">
+                Horarios de atención académica: Lunes a Viernes de 9:00 a 18:00 hs.
+            </p>
+        </div>
+    </div>
+</article>
+{% endblock %}

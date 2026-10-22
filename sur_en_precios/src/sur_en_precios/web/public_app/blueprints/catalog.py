@@ -56,6 +56,93 @@ def index():
         page=page,
         per_page=per_page,
     )
+    if params.q:
+        products = []
+        total_count = 0
+        try:
+            with get_public_session() as session:
+                cat_repo = get_catalog_repository(session)
+                products, total_count = cat_repo.search_articles_paginated(
+                    query=params.q,
+                    page=params.page,
+                    per_page=params.per_page,
+                    mode=params.mode,
+                )
+        except Exception as exc:
+            logger.error("Error searching in index: %s", exc)
+            flash(_("Ocurrió un error al realizar la búsqueda."), "error")
+
+        pagination = Pagination(
+            page=params.page,
+            per_page=params.per_page,
+            total_items=total_count,
+            items=products,
+        )
+        return render_template(
+            "catalog/index.html",
+            query=params.q,
+            mode=params.mode,
+            products=products,
+            pagination=pagination,
+        )
+
+    # When no query is provided, render the rich institutional landing page
+    departments = []
+    try:
+        with get_public_session() as session:
+            cat_repo = get_catalog_repository(session)
+            departments = cat_repo.get_departments()
+    except Exception as exc:
+        logger.debug("Could not load departments for landing page: %s", exc)
+
+    return render_template(
+        "catalog/landing.html",
+        departments=departments,
+    )
+
+
+@catalog_bp.route("/inicio")
+@catalog_bp.route("/landing")
+def landing():
+    departments = []
+    try:
+        with get_public_session() as session:
+            cat_repo = get_catalog_repository(session)
+            departments = cat_repo.get_departments()
+    except Exception as exc:
+        logger.debug("Could not load departments for landing page: %s", exc)
+
+    return render_template(
+        "catalog/landing.html",
+        departments=departments,
+    )
+
+
+@catalog_bp.route("/buscar")
+@catalog_bp.route("/productos")
+def search_view():
+    query_param = request.args.get("q", "")
+    mode_param = request.args.get("mode", "fuzzy")
+    page_param = request.args.get("page", 1)
+    per_page_param = request.args.get("per_page", 20)
+
+    try:
+        page = max(1, int(page_param))
+    except (ValueError, TypeError):
+        page = 1
+
+    try:
+        per_page = max(1, min(500, int(per_page_param)))
+    except (ValueError, TypeError):
+        per_page = 20
+
+    mode = mode_param if mode_param in ("fuzzy", "exact") else "fuzzy"
+    params = ArticleSearchQuery(
+        q=query_param,
+        mode=mode,
+        page=page,
+        per_page=per_page,
+    )
     products = []
     total_count = 0
     if params.q:
@@ -69,7 +156,7 @@ def index():
                     mode=params.mode,
                 )
         except Exception as exc:
-            logger.error("Error searching in index: %s", exc)
+            logger.error("Error searching: %s", exc)
             flash(_("Ocurrió un error al realizar la búsqueda."), "error")
 
     pagination = Pagination(
@@ -85,6 +172,12 @@ def index():
         products=products,
         pagination=pagination,
     )
+
+
+@catalog_bp.route("/help")
+@catalog_bp.route("/ayuda")
+def help():
+    return render_template("catalog/help.html")
 
 
 @catalog_bp.route("/departments")

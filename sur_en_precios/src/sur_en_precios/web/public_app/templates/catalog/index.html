@@ -2,10 +2,15 @@
 
 {% block content %}
 <div class="card">
-    <h2>{{ _('Buscador de Productos') }}</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+        <h2 style="margin: 0; color: var(--accent); display: flex; align-items: center; gap: 0.5rem;">
+            🔍 {{ _('Buscador de Productos') }}
+        </h2>
+        <a href="{{ url_for('catalog.index') }}" class="btn btn-sm btn-secondary">&larr; {{ _('Volver al Inicio') }}</a>
+    </div>
     <form method="GET" action="{{ url_for('catalog.index') }}">
         <div class="form-group">
-            <input type="text" name="q" value="{{ query }}" placeholder="{{ _('Buscar por descripción, marca o código EAN...') }}" autofocus>
+            <input type="text" name="q" value="{{ query }}" placeholder="{{ _('Buscar por descripción, marca o código EAN (ej: arroz, leche, 779...)...') }}" autofocus>
         </div>
         <div class="mode-selector">
             <label>
@@ -17,7 +22,12 @@
                 {{ _('Búsqueda exacta') }}
             </label>
         </div>
-        <button type="submit">{{ _('Buscar') }}</button>
+        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <button type="submit">{{ _('Buscar Productos') }}</button>
+            {% if query %}
+            <a href="{{ url_for('catalog.index') }}" class="btn btn-secondary">{{ _('Limpiar Búsqueda') }}</a>
+            {% endif %}
+        </div>
     </form>
 </div>
 

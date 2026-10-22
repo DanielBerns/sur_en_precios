@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="-10 -10 300 300">
+    <polygon style="fill: rgb(255,0,0); stroke: rgb(255,255,0); stroke-width: 6.0;" 
+             points="0,80  40,80 40,40 80,40  80,0 120,0 120,40 160,40 160,80 200,80 200,120 160,120 160,160 120,160 120,200 80,200 80,160 40,160 40,120 0,120                   0,80">
+    </polygon>
+    <circle cx="100" cy="100" r="10" fill="black" />
+</svg>

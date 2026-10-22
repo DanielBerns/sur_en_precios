@@ -70,7 +70,12 @@ def create_public_app(workdir: Path | None = None) -> Flask:
     )
 
     templates_dir = Path(__file__).resolve().parent / "templates"
-    app = Flask(__name__, template_folder=str(templates_dir))
+    static_dir = Path(__file__).resolve().parent / "static"
+    app = Flask(
+        __name__,
+        template_folder=str(templates_dir),
+        static_folder=str(static_dir),
+    )
 
     # Production-ready session hardening
     app.secret_key = os.environ.get(
@@ -95,11 +100,18 @@ def create_public_app(workdir: Path | None = None) -> Flask:
 
     Babel(app, locale_selector=get_locale)
 
+    @app.route("/favicon.ico")
+    def favicon():
+        """Serves favicon directly from static folder for browsers."""
+        return app.send_static_file("img/favicon.ico")
+
     @app.before_request
     def check_maintenance():
         """Returns 503 Maintenance page during catalog synchronization."""
-        if request.path.startswith("/api/admin/sync") or request.path.startswith(
-            "/static"
+        if (
+            request.path.startswith("/api/admin/sync")
+            or request.path.startswith("/static")
+            or request.path == "/favicon.ico"
         ):
             return None
         if is_maintenance_mode(config):
@@ -112,7 +124,7 @@ def create_public_app(workdir: Path | None = None) -> Flask:
     @app.before_request
     def enforce_csrf_protection():
         # Exempt machine-to-machine sync API from browser session CSRF
-        if request.path.startswith("/api/admin/sync"):
+        if request.path.startswith("/api/admin/sync") or request.path == "/favicon.ico":
             return None
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             if not validate_csrf():
