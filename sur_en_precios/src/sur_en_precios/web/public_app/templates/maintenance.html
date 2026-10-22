@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Actualización en curso — Sur en Precios</title>
+    <style>
+        :root {
+            --bg: #0b132b;
+            --card: #1c2541;
+            --accent: #48cae4;
+            --text: #edf2f4;
+            --warning: #ffb703;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .maintenance-card {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 2.5rem;
+            max-width: 520px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            border-top: 5px solid var(--warning);
+        }
+        .icon {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            color: var(--warning);
+            margin-top: 0;
+            font-size: 1.6rem;
+        }
+        p {
+            color: #a0aec0;
+            line-height: 1.6;
+            margin: 1rem 0 1.5rem 0;
+            font-size: 0.95rem;
+        }
+        .badge {
+            background: rgba(255, 183, 3, 0.15);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .countdown-info {
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: #718096;
+        }
+    </style>
+</head>
+<body>
+    <div class="maintenance-card">
+        <div class="icon">🔄</div>
+        <h1>Actualizando Catálogo Diario</h1>
+        <div class="badge">Sincronización SEPA en progreso</div>
+        <p>
+            Estamos actualizando los precios, artículos y datos del SEPA (Precios Claros).
+            El servicio se reanudará automáticamente en unos momentos.
+        </p>
+        <div class="countdown-info">
+            Esta página se recargará automáticamente cada 30 segundos.<br>
+            Gracias por tu paciencia.
+        </div>
+    </div>
+    <script>
+        setTimeout(function() {
+            window.location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>

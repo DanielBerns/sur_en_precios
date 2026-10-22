@@ -48,6 +48,15 @@ class LogAnalyzerSettings(BaseModel):
     summary: bool = False
 
 
+class SyncSettings(BaseModel):
+    sync_to_web: bool = False
+    server_url: str = "https://surenprecios.pythonanywhere.com"
+    api_token: str = "sur_precios_sync_secret_token_change_in_production"
+    chunk_size_bytes: int = 2_097_152  # 2MB chunks
+    timeout_seconds: int = 900  # 15 minutes
+    staging_dir: str = "data/tmp/sync"
+
+
 class AppConfig(BaseModel):
     app: AppSettings = Field(default_factory=AppSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
@@ -55,6 +64,7 @@ class AppConfig(BaseModel):
     etl: EtlSettings = Field(default_factory=EtlSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     log_analyzer: LogAnalyzerSettings = Field(default_factory=LogAnalyzerSettings)
+    sync: SyncSettings = Field(default_factory=SyncSettings)
 
 
 class Config:
@@ -118,6 +128,15 @@ class Config:
 
     def get_log_analyzer_settings(self) -> LogAnalyzerSettings:
         return self._settings.log_analyzer
+
+    def get_sync_settings(self) -> SyncSettings:
+        return self._settings.sync
+
+    @property
+    def sync_staging_dir(self) -> Path:
+        path = self._workdir / self._settings.sync.staging_dir
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     @property
     def settings(self) -> AppConfig:

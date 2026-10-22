@@ -229,16 +229,40 @@ uv run python -m sur_en_precios.tools.run_daily_update --force
 
 This generates a fresh, indexed `public.sqlite` containing all current regional prices, stores, and reference metrics.
 
-### 2. Synchronization to Production (PythonAnywhere)
+### 2. Automated Synchronization to Production (PythonAnywhere)
 
-The resulting `public.sqlite` is uploaded to the production working directory on PythonAnywhere:
+To overcome PythonAnywhere's 512 MB storage quota and upload limits without manual SSH/SCP access, the system provides an automated chunk-based transfer API (`/api/admin/sync`) with temporary maintenance gating:
 
-```bash
-# Example synchronization command via scp / rsync:
-scp ~/Info/sur_en_precios/public.sqlite <user>@ssh.pythonanywhere.com:/home/<user>/Info/sur_en_precios/public.sqlite
-```
+1. **Configure `config.yaml` on UNPSJB**:
+   ```yaml
+   sync:
+     sync_to_web: true
+     server_url: "https://<tu_usuario>.pythonanywhere.com"
+     api_token: "tu_token_secreto_configurado_en_servidor"
+     chunk_size_bytes: 2097152   # 2 MB por fragmento
+     timeout_seconds: 900
+   ```
 
-Because user accounts, passwords, and shopping baskets are stored in the decoupled `user_data.sqlite` database (referencing articles by standard `ean`), replacing `public.sqlite` updates all catalog prices and products instantly with zero downtime and zero risk to user data.
+2. **Configure `config.yaml` on PythonAnywhere**:
+   ```yaml
+   sync:
+     sync_to_web: false          # En el servidor receptor queda en false
+     api_token: "tu_token_secreto_configurado_en_servidor"
+   ```
+
+3. **Automated Daily Execution via Cron**:
+   When `sync_to_web: true` is set in `config.yaml`, running `run_daily_update` on UNPSJB automatically executes:
+   - SEPA dataset harvest
+   - Regional ETL processing
+   - Compression to `public.sqlite.gz`
+   - Secure chunked transmission to PythonAnywhere
+   - In-place extraction and SQLite verification with zero manual intervention:
+
+   ```bash
+   uv run python -m sur_en_precios.tools.run_daily_update
+   ```
+
+Because user accounts, passwords, and shopping baskets are stored in the decoupled `user_data.sqlite` database (referencing articles by standard `ean`), updating `public.sqlite` refreshes all catalog prices and products seamlessly with zero data loss.
 
 ---
 

@@ -2,7 +2,7 @@ import logging
 import os
 from pathlib import Path
 
-from flask import Flask, abort, request
+from flask import Flask, abort, render_template, request
 from flask_babel import Babel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,8 +16,10 @@ from sur_en_precios.web.public_app.blueprints import (
     baskets_bp,
     catalog_bp,
     optimize_bp,
+    sync_bp,
 )
 from sur_en_precios.web.public_app.database import init_user_db
+from sur_en_precios.web.public_app.maintenance import is_maintenance_mode
 from sur_en_precios.web.public_app.security import (
     generate_csrf_token,
     get_current_user,
@@ -94,7 +96,24 @@ def create_public_app(workdir: Path | None = None) -> Flask:
     Babel(app, locale_selector=get_locale)
 
     @app.before_request
+    def check_maintenance():
+        """Returns 503 Maintenance page during catalog synchronization."""
+        if request.path.startswith("/api/admin/sync") or request.path.startswith(
+            "/static"
+        ):
+            return None
+        if is_maintenance_mode(config):
+            return (
+                render_template("maintenance.html"),
+                503,
+                {"Retry-After": "300"},
+            )
+
+    @app.before_request
     def enforce_csrf_protection():
+        # Exempt machine-to-machine sync API from browser session CSRF
+        if request.path.startswith("/api/admin/sync"):
+            return None
         if request.method in ("POST", "PUT", "DELETE", "PATCH"):
             if not validate_csrf():
                 abort(400, description="Token CSRF inválido o expirado.")
@@ -130,6 +149,7 @@ def create_public_app(workdir: Path | None = None) -> Flask:
     app.register_blueprint(baskets_bp)
     app.register_blueprint(optimize_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(sync_bp)
 
     # Register top-level endpoint aliases for backwards-compatibility
     _register_endpoint_aliases(app)

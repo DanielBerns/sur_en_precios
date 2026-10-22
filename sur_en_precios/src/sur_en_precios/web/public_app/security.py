@@ -113,3 +113,31 @@ def admin_required(f: Callable) -> Callable:
         return f(*args, **kwargs)
 
     return decorated
+
+
+def sync_api_required(f: Callable) -> Callable:
+    """Decorator requiring valid Bearer API token for UNPSJB automated catalog synchronization."""
+
+    @wraps(f)
+    def decorated(*args: Any, **kwargs: Any) -> Any:
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            abort(
+                401,
+                description="Se requiere encabezado Authorization: Bearer <TOKEN> válido.",
+            )
+
+        submitted_token = auth_header.split(" ", 1)[1].strip()
+        config = current_app.config.get("APP_CONFIG")
+        if not config:
+            abort(500, description="Error de configuración del servidor.")
+
+        expected_token = config.get_sync_settings().api_token
+        if not expected_token or not secrets.compare_digest(
+            submitted_token, expected_token
+        ):
+            abort(403, description="Token de sincronización inválido o no autorizado.")
+
+        return f(*args, **kwargs)
+
+    return decorated

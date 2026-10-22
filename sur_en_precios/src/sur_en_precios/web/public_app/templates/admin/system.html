@@ -70,6 +70,16 @@
                 <span>{{ db_file_info.mtime_formatted }}</span>
             </div>
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">Modo Mantenimiento:</span>
+                <span>
+                    {% if is_maintenance %}
+                        <span class="badge badge-warning">ACTIVO (Actualización en curso)</span>
+                    {% else %}
+                        <span class="badge badge-lowest">NORMAL (En línea)</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
                 <span style="color: #a0aec0;">Modo SQLite:</span>
                 <span>WAL (Write-Ahead Logging)</span>
             </div>
@@ -91,7 +101,7 @@
                 <strong>Extracción y ETL en UNPSJB:</strong> La descarga de archivos masivos, descompresión, limpieza taxonómica y cálculo de precios de referencia se ejecutan en un servidor dedicado en la <em>Universidad Nacional de la Patagonia San Juan Bosco</em>.
             </li>
             <li>
-                <strong>Carga hacia Producción:</strong> El archivo <code>public.sqlite</code> optimizado e indexado se carga periódicamente hacia este host.
+                <strong>Carga por Fragmentos:</strong> El archivo <code>public.sqlite</code> se comprime en gzip y se transfiere por bloques hacia el endpoint reservado <code>/api/admin/sync</code>, liberando el almacenamiento previo para operar de forma segura bajo la cuota de 512 MB.
             </li>
             <li>
                 <strong>Persistencia Total de Usuarios:</strong> La base de datos de usuarios y canastas (<code>user_data.sqlite</code>) se mantiene completamente independiente mediante códigos EAN, asegurando cero pérdida de datos ante cada actualización.

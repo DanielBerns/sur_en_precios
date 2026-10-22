@@ -25,6 +25,7 @@ from sur_en_precios.web.public_app.database import (
     get_user_repository,
     get_user_session,
 )
+from sur_en_precios.web.public_app.maintenance import is_maintenance_mode
 from sur_en_precios.web.public_app.security import admin_required
 
 logger = logging.getLogger("sur_en_precios.public_app.admin")
@@ -226,10 +227,15 @@ def system():
             mtime_dt = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
             db_file_info["mtime_formatted"] = mtime_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    is_maintenance = is_maintenance_mode(config) if config else False
+    sync_settings = config.get_sync_settings() if config else None
+
     return render_template(
         "admin/system.html",
         catalog_stats=catalog_stats,
         recent_logs=recent_logs,
         db_file_info=db_file_info,
         workdir=str(config.workdir) if config else "~/Info/sur_en_precios",
+        is_maintenance=is_maintenance,
+        sync_settings=sync_settings,
     )

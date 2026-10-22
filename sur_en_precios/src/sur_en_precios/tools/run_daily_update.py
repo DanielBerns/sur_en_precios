@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from sur_en_precios.config import read_config
 from sur_en_precios.tools.run_etl import run_etl_pipeline
 from sur_en_precios.tools.run_harvest import run_harvest
+from sur_en_precios.tools.sync_client import sync_catalog_to_web
 from sur_en_precios.web.control_app.app import ControlBase, ScraperLogModel
 
 logger = logging.getLogger("sur_en_precios.daily_update")
@@ -78,6 +79,12 @@ def run_daily_update_sync(
             workdir_override=config.workdir,
             should_create_override=False,
         )
+
+        # Step 3: Synchronize with public web server if enabled in config.yaml
+        if config.get_sync_settings().sync_to_web:
+            print("\n[3/3] Sincronizando catálogo con el servidor público...")
+            sync_res = asyncio.run(sync_catalog_to_web(config))
+            print(f"Sincronización remota finalizada: {sync_res.get('status')}")
 
     except Exception as exc:
         status = "ERROR"
