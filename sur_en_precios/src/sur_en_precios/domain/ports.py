@@ -141,6 +141,22 @@ class PriceRepositoryPort(ABC):
     @abstractmethod
     def delete_metrics_for_date(self, metric_date: date) -> int: ...
 
+    def delete_prices_before_date(self, cutoff_date: date) -> int:
+        """Deletes prices older than cutoff_date for rolling window pruning."""
+        return 0
+
+    def delete_metrics_before_date(self, cutoff_date: date) -> int:
+        """Deletes metrics older than cutoff_date for rolling window pruning."""
+        return 0
+
+    def deduplicate_prices_keep_latest(self) -> int:
+        """Retains only the latest price observation for each (ean, store_code), removing older duplicates."""
+        return 0
+
+    def get_active_city_prices(self) -> Dict[Tuple[str, str], List[int]]:
+        """Returns map of (ean, city) -> list of prices across all active stores in the database."""
+        return {}
+
     @abstractmethod
     def get_prices_for_basket(
         self, city: str, price_date: date, eans: List[str]

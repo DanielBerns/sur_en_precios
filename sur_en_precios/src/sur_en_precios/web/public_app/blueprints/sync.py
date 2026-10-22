@@ -56,15 +56,42 @@ def _record_sync_log(
         logger.error("Failed recording sync log to control db: %s", exc)
 
 
+def _get_catalog_meta_path(config: Config) -> Path:
+    """Path to the catalog metadata cache containing current database SHA-256."""
+    return config.data_dir / "catalog_meta.json"
+
+
 @sync_bp.route("/status", methods=["GET"])
 @sync_api_required
 def sync_status():
-    """Returns current server status, disk information, and maintenance state."""
+    """Returns current server status, disk information, maintenance state, and database SHA-256."""
     config: Config = current_app.config["APP_CONFIG"]
     public_db = config.get_public_db_path()
 
     db_exists = public_db.exists()
     db_size = public_db.stat().st_size if db_exists else 0
+
+    db_sha256 = ""
+    meta_path = _get_catalog_meta_path(config)
+    if meta_path.exists():
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f_meta:
+                meta_data = json.load(f_meta)
+                db_sha256 = meta_data.get("db_sha256", "")
+        except Exception:
+            pass
+
+    if not db_sha256 and db_exists and db_size > 0:
+        try:
+            hasher = hashlib.sha256()
+            with open(public_db, "rb") as f_in:
+                while buf := f_in.read(64 * 1024):
+                    hasher.update(buf)
+            db_sha256 = hasher.hexdigest().lower()
+            with open(meta_path, "w", encoding="utf-8") as f_meta:
+                json.dump({"db_sha256": db_sha256, "size_bytes": db_size}, f_meta)
+        except Exception as exc:
+            logger.warning("Could not compute db_sha256 for status: %s", exc)
 
     return jsonify(
         {
@@ -72,6 +99,7 @@ def sync_status():
             "maintenance_mode": is_maintenance_mode(config),
             "database_exists": db_exists,
             "database_size_bytes": db_size,
+            "db_sha256": db_sha256,
             "chunk_size_bytes": config.get_sync_settings().chunk_size_bytes,
             "server_time": datetime.now(timezone.utc).isoformat(),
         }
@@ -113,16 +141,37 @@ def sync_start():
         except Exception as exc:
             logger.warning("Error disposing public_engine: %s", exc)
 
-    # 3. Delete old public.sqlite and WAL/SHM artifacts to free disk space immediately
+    # 3. Truncate public.sqlite in-place to free blocks on NFS without .nfs silly-rename
     public_db_path = config.get_public_db_path()
-    for ext in ("", "-wal", "-shm"):
+    if public_db_path.exists():
+        try:
+            with open(public_db_path, "wb") as f_trunc:
+                f_trunc.truncate(0)
+            logger.info("Truncated public.sqlite to 0 bytes in-place to reclaim NFS blocks.")
+        except Exception as exc:
+            logger.warning("Could not truncate %s: %s", public_db_path, exc)
+
+    # Remove companion WAL and SHM files
+    for ext in ("-wal", "-shm"):
         f = public_db_path.parent / (public_db_path.name + ext)
         if f.exists():
             try:
                 f.unlink()
-                logger.info("Deleted catalog file to free space: %s", f.name)
             except Exception as exc:
                 logger.warning("Could not unlink %s: %s", f, exc)
+
+    # Attempt to purge any orphaned .nfs* files in the data directory
+    try:
+        for nfs_file in public_db_path.parent.glob(".nfs*"):
+            try:
+                with open(nfs_file, "wb") as f_nfs:
+                    f_nfs.truncate(0)
+                nfs_file.unlink()
+                logger.info("Cleaned up orphaned NFS file: %s", nfs_file.name)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # 4. Prepare staging directory and session manifest
     staging_dir = config.sync_staging_dir / upload_id
@@ -338,7 +387,30 @@ def sync_finish(upload_id: str):
     # 7. Clean up staging directory
     shutil.rmtree(staging_dir, ignore_errors=True)
 
-    # 8. Deactivate maintenance mode
+    # 8. Compute final uncompressed database SHA-256 and cache metadata
+    final_db_sha256 = ""
+    try:
+        db_hasher = hashlib.sha256()
+        with open(public_db_path, "rb") as f_db:
+            while buf := f_db.read(64 * 1024):
+                db_hasher.update(buf)
+        final_db_sha256 = db_hasher.hexdigest().lower()
+        meta_file = _get_catalog_meta_path(config)
+        with open(meta_file, "w", encoding="utf-8") as f_meta:
+            json.dump(
+                {
+                    "db_sha256": final_db_sha256,
+                    "archive_sha256": calculated_sha256,
+                    "synced_at": datetime.now(timezone.utc).isoformat(),
+                    "size_bytes": final_size,
+                },
+                f_meta,
+                indent=2,
+            )
+    except Exception as exc:
+        logger.warning("Could not write catalog_meta.json: %s", exc)
+
+    # 9. Deactivate maintenance mode
     clear_maintenance_mode(config)
 
     total_duration_ms = int((time.perf_counter() - start_time) * 1000)
@@ -352,9 +424,10 @@ def sync_finish(upload_id: str):
     )
 
     logger.info(
-        "Sync completed successfully in %d ms (size: %d bytes)",
+        "Sync completed successfully in %d ms (size: %d bytes, sha256: %s)",
         total_duration_ms,
         final_size,
+        final_db_sha256[:12] if final_db_sha256 else "-",
     )
 
     return jsonify(
@@ -363,6 +436,7 @@ def sync_finish(upload_id: str):
             "message": "Base de datos public.sqlite actualizada e indexada exitosamente.",
             "duration_ms": total_duration_ms,
             "database_size_bytes": final_size,
+            "db_sha256": final_db_sha256,
         }
     )
 

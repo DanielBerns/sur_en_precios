@@ -121,6 +121,9 @@ def run_etl_pipeline(
             .select_from(DailyPrice)
             .where(DailyPrice.date == target_date)
         ).scalar_one()
+        active_prices_cnt = session.execute(
+            select(func.count()).select_from(DailyPrice)
+        ).scalar_one()
         metric_cnt = session.execute(
             select(func.count())
             .select_from(DailyProductMetric)
@@ -142,6 +145,7 @@ def run_etl_pipeline(
     print(f" Stores Ingested   : {store_cnt}")
     print(f" Catalog Articles  : {articles_cnt}")
     print(f" Prices (Date)     : {price_cnt}")
+    print(f" Active Prices (7d): {active_prices_cnt}")
     print(f" Reference Prices  : {metric_cnt}")
     if city_breakdown:
         print(" City Breakdown    :")

@@ -73,7 +73,46 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
         if not check_res or check_res[0] != "ok":
             raise ValueError(f"Fallo de integridad local en SQLite: {check_res}")
 
-    # 2. Compress public.sqlite into local temporary gzip archive
+    # 2. Pre-flight check: compute local uncompressed database SHA-256 and verify remote status
+    hasher_db = hashlib.sha256()
+    with open(public_db_path, "rb") as f_db:
+        while chunk := f_db.read(64 * 1024):
+            hasher_db.update(chunk)
+    local_db_sha256 = hasher_db.hexdigest().lower()
+
+    server_url = sync_settings.server_url.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {sync_settings.api_token}",
+    }
+
+    try:
+        async with aiohttp.ClientSession(
+            headers=headers, timeout=aiohttp.ClientTimeout(total=20)
+        ) as status_session:
+            async with status_session.get(f"{server_url}/api/admin/sync/status") as resp:
+                if resp.status == 200:
+                    status_data = await resp.json()
+                    remote_sha256 = str(status_data.get("db_sha256", "")).lower()
+                    if remote_sha256 and remote_sha256 == local_db_sha256:
+                        logger.info(
+                            "El catálogo en PythonAnywhere ya coincide exactamente con la versión local (SHA-256: %s). Sincronización omitida.",
+                            local_db_sha256[:12],
+                        )
+                        print(
+                            f"\n[INFO] La base de datos en PythonAnywhere ya está actualizada (SHA-256: {local_db_sha256[:12]}). Sincronización omitida."
+                        )
+                        return {
+                            "status": "SKIPPED_IDENTICAL_HASH",
+                            "message": "Database on remote server already matches local SHA-256.",
+                            "sha256": local_db_sha256,
+                        }
+    except Exception as precheck_exc:
+        logger.warning(
+            "No se pudo consultar el estado previo de PythonAnywhere: %s",
+            precheck_exc,
+        )
+
+    # 3. Compress public.sqlite into local temporary gzip archive
     outgoing_gz = config.temp_dir / "sync_outgoing.sqlite.gz"
     logger.info("Comprimiendo %s a %s...", public_db_path.name, outgoing_gz.name)
 

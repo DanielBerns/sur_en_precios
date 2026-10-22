@@ -73,18 +73,30 @@ def run_daily_update_sync(
             )
         )
 
-        # Step 2: Run Regional ETL to update public.sqlite
-        print("\n[2/2] Procesando datos regionales y actualizando catálogo...")
-        run_etl_pipeline(
-            workdir_override=config.workdir,
-            should_create_override=False,
-        )
+        public_db = config.get_public_db_path()
+        new_count = harvest_result.get("new_count", 0)
+        if (
+            new_count == 0
+            and not force_harvest
+            and public_db.exists()
+            and public_db.stat().st_size > 0
+        ):
+            print(
+                "\n[INFO] No hay nuevos archivos SEPA y el catálogo local ya existe. Omitiendo ETL y sincronización remota."
+            )
+        else:
+            # Step 2: Run Regional ETL to update public.sqlite
+            print("\n[2/2] Procesando datos regionales y actualizando catálogo...")
+            run_etl_pipeline(
+                workdir_override=config.workdir,
+                should_create_override=False,
+            )
 
-        # Step 3: Synchronize with public web server if enabled in config.yaml
-        if config.get_sync_settings().sync_to_web:
-            print("\n[3/3] Sincronizando catálogo con el servidor público...")
-            sync_res = asyncio.run(sync_catalog_to_web(config))
-            print(f"Sincronización remota finalizada: {sync_res.get('status')}")
+            # Step 3: Synchronize with public web server if enabled in config.yaml
+            if config.get_sync_settings().sync_to_web:
+                print("\n[3/3] Sincronizando catálogo con el servidor público...")
+                sync_res = asyncio.run(sync_catalog_to_web(config))
+                print(f"Sincronización remota finalizada: {sync_res.get('status')}")
 
     except Exception as exc:
         status = "ERROR"

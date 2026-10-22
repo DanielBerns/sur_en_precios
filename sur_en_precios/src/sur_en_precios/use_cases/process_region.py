@@ -5,11 +5,11 @@ from __future__ import annotations
 import csv
 import logging
 import shutil
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, joinedload
 
@@ -54,6 +54,7 @@ class ProcessAndPublishRegionUseCase:
         temp_dir: Optional[Path] = None,
         logger: Optional[logging.Logger] = None,
         master_db_path: Optional[Path] = None,
+        window_days: int = 7,
     ):
         self._target_region = target_region
         self._sepa_dataset = sepa_dataset_adapter or ZipSepaDatasetAdapter()
@@ -63,6 +64,7 @@ class ProcessAndPublishRegionUseCase:
         self._master_db_path = master_db_path or DEFAULT_HERMES_DB_PATH
         self._article_cleaner = ArticleCleaner()
         self._taxonomy_classifier = TaxonomyClassifier()
+        self._window_days = window_days
 
     def _calculate_unit_price(
         self, price: int, pkg_amount: Optional[float], pkg_unit: Optional[str]
@@ -429,14 +431,26 @@ class ProcessAndPublishRegionUseCase:
                     f"No prices found in harvested data for region {self._target_region} on {process_date}."
                 )
 
+            cutoff_date = process_date - timedelta(days=self._window_days - 1)
             with Session(engine) as session:
                 cat_repo = SqlAlchemyCatalogRepository(session)
                 price_repo = SqlAlchemyPriceRepository(session)
 
-                # Idempotent cleanup for process_date
+                # 1. Purge prices older than window_days (7-day window)
+                purged_stale = price_repo.delete_prices_before_date(cutoff_date)
+                if purged_stale > 0:
+                    self._logger.info(
+                        "Purged %d stale prices older than %s (%d-day window)",
+                        purged_stale,
+                        cutoff_date,
+                        self._window_days,
+                    )
+
+                # 2. Idempotent cleanup for process_date
                 price_repo.delete_prices_for_date(process_date)
                 price_repo.delete_metrics_for_date(process_date)
 
+                # 3. Save stores and articles
                 cat_repo.save_stores(all_stores, batch_size=self._batch_size)
                 if new_articles:
                     cat_repo.save_articles(new_articles, batch_size=self._batch_size)
@@ -463,11 +477,24 @@ class ProcessAndPublishRegionUseCase:
                         session.execute(stmt)
                     session.commit()
 
+                # 4. Save new prices for process_date
                 price_repo.save_prices(all_prices, batch_size=self._batch_size)
 
-                # Compute and save Reference Price Metrics
+                # 5. Deduplicate across 7-day window: retain only the latest price observation per (ean, store_code)
+                deduped = price_repo.deduplicate_prices_keep_latest()
+                if deduped > 0:
+                    self._logger.info(
+                        "Deduplicated %d older prices superseded by %s prices",
+                        deduped,
+                        process_date,
+                    )
+
+                # 6. Recompute Reference Price Metrics across all active stores in the 7-day window
+                price_repo.delete_metrics_before_date(process_date)
+                active_city_prices = price_repo.get_active_city_prices()
+
                 metric_entities: List[DailyProductMetric] = []
-                for (ean, city), p_list in city_prices_map.items():
+                for (ean, city), p_list in active_city_prices.items():
                     m = PriceMetricsCalculator.calculate_metrics(
                         metric_date=process_date,
                         ean=ean,
@@ -477,6 +504,18 @@ class ProcessAndPublishRegionUseCase:
                     metric_entities.append(m)
 
                 price_repo.save_metrics(metric_entities, batch_size=self._batch_size)
+
+            # 7. Physical SQLite VACUUM to reclaim unused disk pages
+            try:
+                with engine.connect().execution_options(
+                    isolation_level="AUTOCOMMIT"
+                ) as conn:
+                    conn.execute(text("VACUUM"))
+                self._logger.info(
+                    "Successfully executed SQLite VACUUM on %s", output_db_path
+                )
+            except Exception as vac_err:
+                self._logger.warning("SQLite VACUUM skipped or failed: %s", vac_err)
 
             self._logger.info(
                 "Regional ETL completed: %s stores, %s new articles, %s unreviewed, %s prices",

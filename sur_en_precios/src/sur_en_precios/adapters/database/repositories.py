@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, aliased, joinedload, noload, selectinload
 
@@ -456,38 +457,39 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 if re.match(r"^(v\s+|vinagre\s+)", desc_str):
                     score -= 60.0
 
-                # 5. Brand and packaging quality boosts
-                if b_str:
-                    score += 5.0
-                if re.search(r"\b(1\s*kg|500\s*g|1000\s*g)\b", desc_str):
-                    score += 5.0
+                # 5. Fuzzy token fallback / typo tolerance
+                tok_scores = []
+                for tok in tokens:
+                    best_tok = 0.0
+                    for word in f"{desc_str} {b_str}".split():
+                        sim = fuzzy_similarity_ratio(tok, word)
+                        if sim > best_tok:
+                            best_tok = sim
+                    tok_scores.append(best_tok)
+                avg_tok = sum(tok_scores) / len(tok_scores) if tok_scores else 0.0
+                fuzzy_score = max(
+                    fuzzy_similarity_ratio(q_lower, desc_str),
+                    fuzzy_similarity_ratio(q_lower, b_str),
+                    avg_tok,
+                )
+                if fuzzy_score >= 0.55:
+                    score = max(score, fuzzy_score * 30.0)
+
+                # 6. Brand and packaging quality boosts (only if the product matched the search query)
+                if score > 0:
+                    if b_str:
+                        score += 5.0
+                    if re.search(r"\b(1\s*kg|500\s*g|1000\s*g)\b", desc_str):
+                        score += 5.0
 
                 # Penalize dirty or truncated items (e.g. "arroz para 1 u")
                 if re.search(r"\b(para\s+1\s*u)\b", desc_str):
                     score -= 40.0
 
-                # 6. Fuzzy token fallback if score is low
-                if score < 10.0:
-                    tok_scores = []
-                    for tok in tokens:
-                        best_tok = 0.0
-                        for word in f"{desc_str} {b_str}".split():
-                            sim = fuzzy_similarity_ratio(tok, word)
-                            if sim > best_tok:
-                                best_tok = sim
-                        tok_scores.append(best_tok)
-                    avg_tok = sum(tok_scores) / len(tok_scores) if tok_scores else 0.0
-                    fuzzy_score = max(
-                        fuzzy_similarity_ratio(q_lower, desc_str),
-                        fuzzy_similarity_ratio(q_lower, b_str),
-                        avg_tok,
-                    )
-                    score = max(score, fuzzy_score * 10.0)
-
                 if score >= 3.5:
                     scored.append((score, a.name or "", a))
 
-            scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            scored.sort(key=lambda item: (-item[0], item[1]))
             total = len(scored)
             start = (page - 1) * per_page
             return [a for _, _, a in scored[start : start + per_page]], total
@@ -824,6 +826,60 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         self._session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
 
+    def delete_prices_before_date(self, cutoff_date: date) -> int:
+        """Deletes prices older than cutoff_date for rolling window pruning."""
+        stmt = delete(DailyPrice).where(DailyPrice.date < cutoff_date)
+        result = self._session.execute(stmt)
+        self._session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    def delete_metrics_before_date(self, cutoff_date: date) -> int:
+        """Deletes metrics older than cutoff_date for rolling window pruning."""
+        stmt = delete(DailyProductMetric).where(DailyProductMetric.date < cutoff_date)
+        result = self._session.execute(stmt)
+        self._session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    def deduplicate_prices_keep_latest(self) -> int:
+        """Retains only the latest price observation for each (ean, store_code), removing older duplicates."""
+        count_before = (
+            self._session.scalar(select(func.count()).select_from(DailyPrice)) or 0
+        )
+        self._session.execute(
+            text(
+                """
+                DELETE FROM daily_prices
+                WHERE rowid NOT IN (
+                    SELECT rowid
+                    FROM (
+                        SELECT rowid, ROW_NUMBER() OVER (
+                            PARTITION BY ean, store_code 
+                            ORDER BY date DESC
+                        ) as rn
+                        FROM daily_prices
+                    )
+                    WHERE rn = 1
+                )
+                """
+            )
+        )
+        self._session.commit()
+        count_after = (
+            self._session.scalar(select(func.count()).select_from(DailyPrice)) or 0
+        )
+        return max(0, count_before - count_after)
+
+    def get_active_city_prices(self) -> Dict[Tuple[str, str], List[int]]:
+        """Groups active prices in daily_prices by (ean, city) for reference metrics calculation."""
+        stmt = (
+            select(DailyPrice.ean, PointOfSale.city, DailyPrice.price)
+            .join(PointOfSale, DailyPrice.store_code == PointOfSale.code)
+        )
+        city_prices: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+        for ean, city, price in self._session.execute(stmt).all():
+            city_prices[(ean, city or "General")].append(price)
+        return city_prices
+
     def get_prices_for_basket(
         self, city: str, price_date: date, eans: List[str]
     ) -> List[DailyPrice]:
@@ -840,12 +896,20 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
                 )
                 .where(
                     func.lower(PointOfSale.city) == func.lower(city.strip()),
-                    DailyPrice.date == price_date,
+                    DailyPrice.date <= price_date,
                     DailyPrice.ean.in_(chunk_eans),
                 )
+                .order_by(DailyPrice.date.desc())
             )
             results.extend(self._session.execute(stmt).scalars().all())
-        return results
+
+        # Retain only the latest observed price per (ean, store_code)
+        deduped: Dict[Tuple[str, str], DailyPrice] = {}
+        for dp in results:
+            key = (dp.ean, dp.store_code)
+            if key not in deduped or dp.date > deduped[key].date:
+                deduped[key] = dp
+        return list(deduped.values())
 
     def get_reference_prices(
         self, city: str, price_date: date, eans: List[str]
@@ -853,15 +917,21 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         ref_dict: Dict[str, int] = {}
         for i in range(0, len(eans), CHUNK_SIZE):
             chunk_eans = eans[i : i + CHUNK_SIZE]
-            stmt = select(
-                DailyProductMetric.ean, DailyProductMetric.median_price
-            ).where(
-                func.lower(DailyProductMetric.city) == func.lower(city.strip()),
-                DailyProductMetric.date == price_date,
-                DailyProductMetric.ean.in_(chunk_eans),
+            stmt = (
+                select(
+                    DailyProductMetric.ean,
+                    DailyProductMetric.median_price,
+                    DailyProductMetric.date,
+                )
+                .where(
+                    func.lower(DailyProductMetric.city) == func.lower(city.strip()),
+                    DailyProductMetric.date <= price_date,
+                    DailyProductMetric.ean.in_(chunk_eans),
+                )
+                .order_by(DailyProductMetric.date.desc())
             )
-            for ean_val, med_p in self._session.execute(stmt).all():
-                if med_p is not None:
+            for ean_val, med_p, _ in self._session.execute(stmt).all():
+                if med_p is not None and ean_val not in ref_dict:
                     ref_dict[ean_val] = int(med_p)
         return ref_dict
 
@@ -890,66 +960,38 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         # Determine target date
         target_date = price_date
         if not target_date:
-            metric_date_stmt = select(func.max(DailyProductMetric.date)).where(
-                DailyProductMetric.ean == clean_ean
-            )
-            if city:
-                metric_date_stmt = metric_date_stmt.where(
-                    func.lower(DailyProductMetric.city) == func.lower(city.strip())
-                )
-            target_date = self._session.execute(metric_date_stmt).scalar()
-
-        if not target_date:
-            price_date_stmt = select(func.max(DailyPrice.date)).where(
-                DailyPrice.ean == clean_ean
-            )
-            if city:
-                price_date_stmt = price_date_stmt.join(
-                    PointOfSale, DailyPrice.store_code == PointOfSale.code
-                ).where(func.lower(PointOfSale.city) == func.lower(city.strip()))
-            target_date = self._session.execute(price_date_stmt).scalar()
+            target_date = self.get_latest_price_date()
 
         if isinstance(target_date, str):
             target_date = date.fromisoformat(target_date)
 
-        if not target_date:
-            return ArticlePriceStats(
-                ean=article.ean,
-                name=article.name,
-                clean_description=article.clean_description,
-                brand_name=article.brand_name,
-                package=article.package,
-                category_name=article.category.name if article.category else None,
-                date=None,
-                city=city,
-                min_price=None,
-                max_price=None,
-                reference_price=None,
-                price_dispersion=None,
-                cheapest_store=None,
-                most_expensive_store=None,
-                stores_count=0,
-                store_prices=[],
-            )
-
-        # Observed store prices on target_date
+        # Observed store prices on or before target_date (within 7-day window)
         price_stmt = (
             select(DailyPrice, PointOfSale)
             .join(PointOfSale, DailyPrice.store_code == PointOfSale.code)
-            .where(DailyPrice.ean == clean_ean, DailyPrice.date == target_date)
+            .where(DailyPrice.ean == clean_ean)
         )
+        if target_date:
+            price_stmt = price_stmt.where(DailyPrice.date <= target_date)
         if city:
             price_stmt = price_stmt.where(
                 func.lower(PointOfSale.city) == func.lower(city.strip())
             )
 
-        price_stmt = price_stmt.order_by(DailyPrice.price.asc())
+        price_stmt = price_stmt.order_by(DailyPrice.date.desc(), DailyPrice.price.asc())
         price_rows = self._session.execute(price_stmt).all()
 
+        # Deduplicate to latest observation per store
+        store_map: Dict[str, Tuple[DailyPrice, PointOfSale]] = {}
+        for dp, pos in price_rows:
+            if pos.code not in store_map or dp.date > store_map[pos.code][0].date:
+                store_map[pos.code] = (dp, pos)
+
+        sorted_stores = sorted(store_map.values(), key=lambda x: x[0].price)
         store_details: List[StorePriceDetail] = []
         observed_prices: List[int] = []
 
-        for dp, pos in price_rows:
+        for dp, pos in sorted_stores:
             observed_prices.append(dp.price)
             store_details.append(
                 StorePriceDetail(
@@ -963,14 +1005,17 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
                 )
             )
 
-        # Precomputed metrics on target_date
+        # Precomputed metrics on or before target_date
         metric_stmt = select(DailyProductMetric).where(
-            DailyProductMetric.ean == clean_ean, DailyProductMetric.date == target_date
+            DailyProductMetric.ean == clean_ean
         )
+        if target_date:
+            metric_stmt = metric_stmt.where(DailyProductMetric.date <= target_date)
         if city:
             metric_stmt = metric_stmt.where(
                 func.lower(DailyProductMetric.city) == func.lower(city.strip())
             )
+        metric_stmt = metric_stmt.order_by(DailyProductMetric.date.desc())
 
         metrics = self._session.execute(metric_stmt).scalars().all()
 
@@ -1029,6 +1074,12 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
             else (metrics[0].city if metrics else None)
         )
 
+        display_date = (
+            max(dp.date for dp, _ in sorted_stores)
+            if sorted_stores
+            else target_date
+        )
+
         return ArticlePriceStats(
             ean=article.ean,
             name=article.name,
@@ -1036,7 +1087,7 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
             brand_name=article.brand_name,
             package=article.package,
             category_name=article.category.name if article.category else None,
-            date=target_date,
+            date=display_date,
             city=resolved_city,
             min_price=min_p,
             max_price=max_p,
