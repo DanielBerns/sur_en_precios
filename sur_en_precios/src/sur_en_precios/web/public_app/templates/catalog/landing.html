@@ -56,6 +56,7 @@
         <a href="{{ url_for('catalog.departments') }}" class="btn btn-secondary">📂 Explorar Categorías</a>
         <a href="{{ url_for('baskets.baskets') }}" class="btn btn-secondary">🛒 Mis Canastas</a>
         <a href="{{ url_for('optimize.optimize') }}" class="btn btn-success">⚡ Optimizar Precios</a>
+        <a href="#herramientas" class="btn btn-outline">🌐 Otras Herramientas</a>
         <a href="{{ url_for('catalog.help') }}" class="btn btn-outline">📖 Guía y Ayuda</a>
     </div>
 </section>
@@ -238,6 +239,76 @@
                 🔗 <em>Articulación en estudios socioterritoriales y comunitarios</em>
             </div>
         </div>
+    </div>
+</section>
+
+<!-- Other Tools & Portfolio Section -->
+<section id="herramientas" style="margin-top: 4rem;">
+    <div class="section-header">
+        <span class="section-tag">Portafolio y Ecosistema Digital</span>
+        <h2 class="section-title">Otras Herramientas Desarrolladas por el Grupo</h2>
+        <p class="section-desc">
+            Plataformas y aplicaciones web complementarias desarrolladas por nuestro equipo en el Observatorio de Economía (FCE - UNPSJB) para facilitar la búsqueda, el análisis de datos y la transparencia ciudadana.
+        </p>
+    </div>
+
+    <div class="tools-grid">
+        <!-- Tool 1: Buscador de Productos -->
+        <article class="tool-card">
+            <div class="tool-card-img-wrapper">
+                <img src="{{ url_for('static', filename='img/buscador-productos.jpg') }}" alt="Buscador de Productos" class="tool-card-img" onerror="this.onerror=null; this.src='{{ url_for('static', filename='img/chakana.svg') }}'; this.style.objectFit='contain'; this.style.padding='2rem';">
+            </div>
+            <div class="tool-card-body">
+                <div>
+                    <span class="badge badge-info">Web App · Catálogo</span>
+                </div>
+                <h3>Buscador de Productos</h3>
+                <p>
+                    Plataforma web de búsqueda ágil orientada a la localización inmediata de artículos de consumo masivo, comparación de precios e información clara de productos en comercios de la región.
+                </p>
+                <a href="https://buscador-productos.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-sm tool-link-btn">
+                    Acceder al Buscador ↗
+                </a>
+            </div>
+        </article>
+
+        <!-- Tool 2: Monitor San Jorge (Streamlit) -->
+        <article class="tool-card">
+            <div class="tool-card-img-wrapper" style="background: radial-gradient(circle, #253355 0%, #131c33 100%);">
+                <div style="font-size: 3.5rem;">📊</div>
+            </div>
+            <div class="tool-card-body">
+                <div>
+                    <span class="badge badge-lowest">Streamlit · Tablero Analítico</span>
+                </div>
+                <h3>Monitor San Jorge (OEFCE)</h3>
+                <p>
+                    Tablero de control interactivo con indicadores socioeconómicos, series temporales, actividad regional y relevamientos de la cuenca del Golfo San Jorge, desarrollado con Streamlit.
+                </p>
+                <a href="https://oefce-msj.streamlit.app/" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-success tool-link-btn">
+                    Explorar Monitor San Jorge ↗
+                </a>
+            </div>
+        </article>
+
+        <!-- Tool 3: Buscador de Materiales -->
+        <article class="tool-card">
+            <div class="tool-card-img-wrapper">
+                <img src="{{ url_for('static', filename='img/buscador-materiales.jpg') }}" alt="Buscador de Materiales" class="tool-card-img" onerror="this.onerror=null; this.src='{{ url_for('static', filename='img/chakana.svg') }}'; this.style.objectFit='contain'; this.style.padding='2rem';">
+            </div>
+            <div class="tool-card-body">
+                <div>
+                    <span class="badge badge-warning">Beta · Insumos y Construcción</span>
+                </div>
+                <h3>Buscador de Materiales</h3>
+                <p>
+                    Herramienta especializada destinada al relevamiento, seguimiento y comparación de precios en el sector de la construcción, corralones y proveedores de insumos patagónicos.
+                </p>
+                <a href="https://buscador-productos.vercel.app/materiales/" target="_blank" rel="noopener noreferrer" class="btn btn-sm tool-link-btn">
+                    Consultar Materiales ↗
+                </a>
+            </div>
+        </article>
     </div>
 </section>
 

@@ -141,10 +141,22 @@
         .reserved-card h3 { color: #f3e5f5; font-size: 1.2rem; margin: 0.5rem 0 0.75rem 0; }
         .reserved-card p { color: #d1c4e9; font-size: 0.92rem; line-height: 1.5; margin: 0; }
 
+        /* Tools & Ecosystem Cards */
+        .tools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.75rem; margin: 2rem 0; }
+        .tool-card { background: var(--card); border: 1px solid #3a506b; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; transition: all 0.25s ease; }
+        .tool-card:hover { transform: translateY(-5px); border-color: var(--accent); box-shadow: 0 10px 28px rgba(0,0,0,0.45); }
+        .tool-card-img-wrapper { height: 160px; overflow: hidden; background: #13223f; display: flex; align-items: center; justify-content: center; position: relative; }
+        .tool-card-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease; }
+        .tool-card:hover .tool-card-img { transform: scale(1.04); }
+        .tool-card-body { padding: 1.5rem; display: flex; flex-direction: column; flex: 1; }
+        .tool-card-body h3 { margin: 0.5rem 0 0.5rem 0; font-size: 1.25rem; color: #ffffff; }
+        .tool-card-body p { color: var(--text-muted); font-size: 0.93rem; line-height: 1.55; margin: 0 0 1.25rem 0; flex: 1; }
+        .tool-link-btn { align-self: flex-start; text-decoration: none; }
+
         /* Footer */
         .site-footer { background: #070d1e; border-top: 2px solid #233554; padding: 3rem 1.5rem 1.5rem 1.5rem; margin-top: 4rem; color: var(--text); }
-        .footer-container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr 1.3fr 1.5fr; gap: 2.5rem; }
-        @media (max-width: 992px) { .footer-container { grid-template-columns: 1fr 1fr; } }
+        .footer-container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 2fr 1fr 1.2fr 1.4fr 1.4fr; gap: 2rem; }
+        @media (max-width: 1050px) { .footer-container { grid-template-columns: 1fr 1fr; } }
         @media (max-width: 600px) { .footer-container { grid-template-columns: 1fr; } }
         .footer-brand { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
         .footer-brand h3 { margin: 0; color: var(--accent); font-size: 1.35rem; }
@@ -357,6 +369,7 @@
             <a href="{{ url_for('catalog.departments') }}">{{ _('Categorías') }}</a>
             <a href="{{ url_for('baskets.baskets') }}">{{ _('Mis Canastas') }}</a>
             <a href="{{ url_for('optimize.optimize') }}">{{ _('Optimizar Precios') }}</a>
+            <a href="{{ url_for('catalog.index') }}#herramientas">{{ _('Otras Herramientas') }}</a>
             <a href="{{ url_for('catalog.help') }}">{{ _('Ayuda') }}</a>
             <a href="{{ url_for('catalog.index') }}#institucional">{{ _('Institucional') }}</a>
             {% if current_user.is_authenticated %}
@@ -430,6 +443,15 @@
                     <li><a href="{{ url_for('catalog.index') }}#espacios-reservados">Facultad de Ingeniería (Res.)</a></li>
                     <li><a href="{{ url_for('catalog.index') }}#espacios-reservados">GI Proc. Información (Res.)</a></li>
                     <li><a href="{{ url_for('catalog.index') }}#espacios-reservados">Facultad de Humanidades (Res.)</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-col">
+                <h4>Otras Herramientas</h4>
+                <ul>
+                    <li><a href="https://buscador-productos.vercel.app/" target="_blank" rel="noopener noreferrer">Buscador de Productos ↗</a></li>
+                    <li><a href="https://oefce-msj.streamlit.app/" target="_blank" rel="noopener noreferrer">Monitor San Jorge (OEFCE) ↗</a></li>
+                    <li><a href="https://buscador-productos.vercel.app/materiales/" target="_blank" rel="noopener noreferrer">Buscador de Materiales ↗</a></li>
                 </ul>
             </div>
 

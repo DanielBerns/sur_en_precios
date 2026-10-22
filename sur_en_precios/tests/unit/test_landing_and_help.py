@@ -123,3 +123,31 @@ def test_search_view_and_url_for_resolution(tmp_path: Path):
     res_buscar = client.get("/buscar")
     assert res_buscar.status_code == 200
     assert "Buscador de Productos" in res_buscar.get_data(as_text=True)
+
+
+def test_external_group_tools_links(tmp_path: Path):
+    workdir = tmp_path / "tools_workdir"
+    app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    # 1. Links present on the Landing Page
+    res_landing = client.get("/")
+    assert res_landing.status_code == 200
+    landing_html = res_landing.get_data(as_text=True)
+
+    assert "https://buscador-productos.vercel.app/" in landing_html
+    assert "https://oefce-msj.streamlit.app/" in landing_html
+    assert "https://buscador-productos.vercel.app/materiales/" in landing_html
+    assert "Otras Herramientas" in landing_html
+    assert "Buscador de Materiales" in landing_html
+    assert "Monitor San Jorge" in landing_html
+
+    # 2. Links present on the Help Page
+    res_help = client.get("/help")
+    assert res_help.status_code == 200
+    help_html = res_help.get_data(as_text=True)
+
+    assert "https://buscador-productos.vercel.app/" in help_html
+    assert "https://oefce-msj.streamlit.app/" in help_html
+    assert "https://buscador-productos.vercel.app/materiales/" in help_html
