@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
@@ -6,9 +8,9 @@ from flask import Flask, abort, render_template, request
 from flask_babel import Babel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from sur_en_precios.config import read_config
-from sur_en_precios.domain.models_public import PublicBase
 from sur_en_precios.web.public_app.blueprints import (
     admin_bp,
     api_bp,
@@ -18,7 +20,10 @@ from sur_en_precios.web.public_app.blueprints import (
     optimize_bp,
     sync_bp,
 )
-from sur_en_precios.web.public_app.database import init_user_db
+from sur_en_precios.web.public_app.database import (
+    ensure_public_session_factory,
+    init_user_db,
+)
 from sur_en_precios.web.public_app.maintenance import is_maintenance_mode
 from sur_en_precios.web.public_app.security import (
     generate_csrf_token,
@@ -53,18 +58,15 @@ def _register_endpoint_aliases(app: Flask) -> None:
 def create_public_app(workdir: Path | None = None) -> Flask:
     """Factory creating Flask public web application configured with Blueprints and SQLAlchemy."""
     config = read_config(workdir_override=workdir, should_create_override=True)
-    public_db_path = config.get_public_db_path()
     user_db_path = config.get_user_db_path()
 
-    public_engine = create_engine(f"sqlite:///{public_db_path}")
-    PublicBase.metadata.create_all(public_engine)
-
-    user_engine = create_engine(f"sqlite:///{user_db_path}")
+    user_engine = create_engine(
+        f"sqlite:///{user_db_path}",
+        poolclass=NullPool,
+        connect_args={"timeout": 30.0},
+    )
     init_user_db(user_engine)
 
-    public_session_factory = sessionmaker(
-        bind=public_engine, autoflush=False, expire_on_commit=False
-    )
     user_session_factory = sessionmaker(
         bind=user_engine, autoflush=False, expire_on_commit=False
     )
@@ -90,13 +92,11 @@ def create_public_app(workdir: Path | None = None) -> Flask:
 
     app.config["BABEL_DEFAULT_LOCALE"] = "es_AR"
     app.config["APP_CONFIG"] = config
-    app.config["PUBLIC_ENGINE"] = public_engine
     app.config["USER_ENGINE"] = user_engine
 
-    app.extensions["public_engine"] = public_engine
     app.extensions["user_engine"] = user_engine
-    app.extensions["public_session_factory"] = public_session_factory
     app.extensions["user_session_factory"] = user_session_factory
+    ensure_public_session_factory(app)
 
     Babel(app, locale_selector=get_locale)
 

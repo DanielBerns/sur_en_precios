@@ -62,6 +62,28 @@
                 </span>
             </div>
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">Slot Red / Green Activo:</span>
+                <span>
+                    {% if db_file_info.active_slot == 'red' %}
+                        <span class="badge badge-highest">RED (public_red.sqlite)</span>
+                    {% elif db_file_info.active_slot == 'green' %}
+                        <span class="badge badge-lowest">GREEN (public_green.sqlite)</span>
+                    {% else %}
+                        <span class="badge badge-warning">LEGACY ({{ db_file_info.filename }})</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">Slot en Espera (Standby):</span>
+                <span>
+                    {% if db_file_info.standby_slot %}
+                        <strong>{{ db_file_info.standby_slot | upper }}</strong> (Disponible para Rollback)
+                    {% else %}
+                        <span style="color: #a0aec0;">Sin respaldo previo</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
                 <span style="color: #a0aec0;">Tamaño en disco:</span>
                 <strong>{{ db_file_info.size_formatted }}</strong>
             </div>
@@ -69,6 +91,12 @@
                 <span style="color: #a0aec0;">Última sincronización (disco):</span>
                 <span>{{ db_file_info.mtime_formatted }}</span>
             </div>
+            {% if db_file_info.db_sha256 %}
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
+                <span style="color: #a0aec0;">SHA-256 Activo:</span>
+                <code title="{{ db_file_info.db_sha256 }}">{{ db_file_info.db_sha256[:16] }}…</code>
+            </div>
+            {% endif %}
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
                 <span style="color: #a0aec0;">Modo Mantenimiento:</span>
                 <span>
@@ -81,12 +109,20 @@
             </div>
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #253355; padding-bottom: 0.4rem;">
                 <span style="color: #a0aec0;">Modo SQLite:</span>
-                <span>WAL (Write-Ahead Logging)</span>
+                <span>{{ db_file_info.sqlite_mode }}</span>
             </div>
             <div style="margin-top: 0.5rem;">
                 <span style="color: #a0aec0; display: block; margin-bottom: 0.25rem; font-size: 0.8rem;">Ubicación:</span>
                 <code style="display: block; background: #0b132b; border: 1px solid #3a506b; border-radius: 4px; padding: 0.4rem 0.6rem; color: var(--accent); word-break: break-all; font-size: 0.8rem;">{{ db_file_info.path or workdir }}</code>
             </div>
+            {% if db_file_info.rollback_available %}
+            <form method="post" action="{{ url_for('admin.system_rollback') }}" style="margin-top: 0.75rem;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-secondary" style="width: 100%;">
+                    Revertir al Slot Anterior ({{ db_file_info.standby_slot | upper }})
+                </button>
+            </form>
+            {% endif %}
         </div>
     </div>
 
@@ -94,14 +130,14 @@
     <div class="card">
         <h3 style="color: var(--accent); margin-top: 0;">Flujo de Sincronización UNPSJB</h3>
         <p style="color: #a0aec0; font-size: 0.9rem; line-height: 1.5;">
-            El procesamiento y transformación de datos diarios del SEPA se realiza de forma desacoplada para optimizar los recursos del servidor web:
+            El procesamiento y transformación de datos diarios del SEPA se realiza de forma desacoplada mediante arquitectura <strong>Red / Green</strong> sin tiempo de inactividad:
         </p>
         <ul style="color: var(--text); font-size: 0.88rem; line-height: 1.6; padding-left: 1.25rem; margin-top: 0.5rem;">
             <li>
                 <strong>Extracción y ETL en UNPSJB:</strong> La descarga de archivos masivos, descompresión, limpieza taxonómica y cálculo de precios de referencia se ejecutan en un servidor dedicado en la <em>Universidad Nacional de la Patagonia San Juan Bosco</em>.
             </li>
             <li>
-                <strong>Carga por Fragmentos:</strong> El archivo <code>public.sqlite</code> se comprime en gzip y se transfiere por bloques hacia el endpoint reservado <code>/api/admin/sync</code>, liberando el almacenamiento previo para operar de forma segura bajo la cuota de 512 MB.
+                <strong>Cutover Atómico Red / Green:</strong> Los fragmentos comprimidos se descomprimen y validan fuera de línea sobre el slot inactivo (<code>public_red.sqlite</code> / <code>public_green.sqlite</code>) en modo solo-lectura inmutable, conmutando el tráfico en milisegundos sin bloqueos NFS ni interrupciones.
             </li>
             <li>
                 <strong>Persistencia Total de Usuarios:</strong> La base de datos de usuarios y canastas (<code>user_data.sqlite</code>) se mantiene completamente independiente mediante códigos EAN, asegurando cero pérdida de datos ante cada actualización.
@@ -133,6 +169,8 @@
                 <td>
                     {% if log.status == 'SUCCESS' %}
                         <span class="badge badge-lowest">EXITOSO</span>
+                    {% elif log.status == 'ROLLBACK_SUCCESS' %}
+                        <span class="badge badge-warning">ROLLBACK</span>
                     {% else %}
                         <span class="badge badge-highest">ERROR</span>
                     {% endif %}

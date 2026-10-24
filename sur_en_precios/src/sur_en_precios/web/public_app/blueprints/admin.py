@@ -19,13 +19,22 @@ from sqlalchemy.orm import Session
 
 from sur_en_precios.domain.models_public import Article, DailyPrice, PointOfSale
 from sur_en_precios.web.control_app.app import ControlBase, ScraperLogModel
+from sur_en_precios.web.public_app.catalog_slots import (
+    VALID_SLOTS,
+    get_slots_diagnostics,
+    rollback_slot,
+)
 from sur_en_precios.web.public_app.database import (
+    ensure_public_session_factory,
     get_catalog_repository,
     get_public_session,
     get_user_repository,
     get_user_session,
 )
-from sur_en_precios.web.public_app.maintenance import is_maintenance_mode
+from sur_en_precios.web.public_app.maintenance import (
+    clear_maintenance_mode,
+    is_maintenance_mode,
+)
 from sur_en_precios.web.public_app.security import admin_required
 
 logger = logging.getLogger("sur_en_precios.public_app.admin")
@@ -34,7 +43,7 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
 def _get_catalog_stats() -> Dict[str, Any]:
-    """Retrieves high-level summary metrics from public.sqlite."""
+    """Retrieves high-level summary metrics from the active public catalog slot."""
     try:
         with get_public_session() as p_session:
             articles_count = (
@@ -197,10 +206,15 @@ def basket_detail(uuid_str: str):
     )
 
 
+def _format_bytes(size_bytes: int) -> str:
+    size_mb = size_bytes / (1024 * 1024)
+    return f"{size_mb:.2f} MB" if size_mb >= 1.0 else f"{size_bytes / 1024:.1f} KB"
+
+
 @admin_bp.route("/system", methods=["GET"])
 @admin_required
-def system():
-    """Displays catalog database statistics and UNPSJB synchronization diagnostics."""
+def system() -> Any:
+    """Displays Red/Green catalog database statistics and UNPSJB synchronization diagnostics."""
     config = current_app.config.get("APP_CONFIG")
 
     catalog_stats = _get_catalog_stats()
@@ -208,22 +222,33 @@ def system():
 
     db_file_info: Dict[str, Any] = {
         "path": "",
+        "filename": "public.sqlite",
         "exists": False,
         "size_formatted": "-",
         "mtime_formatted": "-",
+        "active_slot": None,
+        "standby_slot": None,
+        "rollback_available": False,
+        "db_sha256": "",
+        "sqlite_mode": "Rollback Journal (DELETE)",
     }
     if config:
-        public_db_path = config.get_public_db_path()
-        db_file_info["path"] = str(public_db_path)
-        if public_db_path.exists():
+        diag = get_slots_diagnostics(config)
+        active_db_path = diag["active_path"]
+        active_slot = diag["active_slot"]
+        db_file_info["path"] = str(active_db_path)
+        db_file_info["filename"] = active_db_path.name
+        db_file_info["active_slot"] = active_slot
+        db_file_info["standby_slot"] = diag["standby_slot"]
+        db_file_info["rollback_available"] = diag["rollback_available"]
+        if active_slot in VALID_SLOTS:
+            db_file_info["sqlite_mode"] = "Read-Only Immutable (Red/Green)"
+            db_file_info["db_sha256"] = diag["slots"][active_slot].get("db_sha256", "")
+
+        if active_db_path.exists() and active_db_path.stat().st_size > 0:
             db_file_info["exists"] = True
-            stat = public_db_path.stat()
-            size_mb = stat.st_size / (1024 * 1024)
-            db_file_info["size_formatted"] = (
-                f"{size_mb:.2f} MB"
-                if size_mb >= 1.0
-                else f"{stat.st_size / 1024:.1f} KB"
-            )
+            stat = active_db_path.stat()
+            db_file_info["size_formatted"] = _format_bytes(stat.st_size)
             mtime_dt = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
             db_file_info["mtime_formatted"] = mtime_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -239,3 +264,33 @@ def system():
         is_maintenance=is_maintenance,
         sync_settings=sync_settings,
     )
+
+
+@admin_bp.route("/system/rollback", methods=["POST"])
+@admin_required
+def system_rollback() -> Any:
+    """Admin action reverting the active catalog slot to the validated standby slot."""
+    config = current_app.config.get("APP_CONFIG")
+    if not config:
+        flash(_("Configuración de servidor no disponible."), "error")
+        return redirect(url_for("admin.system"))
+
+    try:
+        new_state = rollback_slot(config)
+        ensure_public_session_factory(current_app)
+        clear_maintenance_mode(config)
+        flash(
+            _(
+                "Catálogo revertido exitosamente al slot '%(slot)s'.",
+                slot=(new_state.active_slot or "").upper(),
+            ),
+            "success",
+        )
+    except Exception as exc:
+        logger.warning("Admin rollback failed: %s", exc)
+        flash(
+            _("No se pudo revertir el slot del catálogo: %(err)s", err=str(exc)),
+            "error",
+        )
+
+    return redirect(url_for("admin.system"))

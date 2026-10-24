@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 from pathlib import Path
@@ -55,6 +57,7 @@ class SyncSettings(BaseModel):
     chunk_size_bytes: int = 2_097_152  # 2MB chunks
     timeout_seconds: int = 900  # 15 minutes
     staging_dir: str = "data/tmp/sync"
+    retain_previous_slot: bool = True
 
 
 class AppConfig(BaseModel):
@@ -104,6 +107,16 @@ class Config:
 
     def get_public_db_path(self) -> Path:
         return self.data_dir / self._settings.database.public_db_filename
+
+    def get_slot_db_path(self, slot: str) -> Path:
+        if slot not in ("red", "green"):
+            raise ValueError(
+                f"Invalid catalog slot '{slot}'. Expected 'red' or 'green'."
+            )
+        return self.data_dir / f"public_{slot}.sqlite"
+
+    def get_catalog_state_path(self) -> Path:
+        return self.data_dir / "catalog_state.json"
 
     def get_user_db_path(self) -> Path:
         return self.data_dir / self._settings.database.user_db_filename

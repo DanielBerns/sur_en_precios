@@ -1,10 +1,11 @@
 """Client tool for streaming compressed public.sqlite chunks from UNPSJB to PythonAnywhere."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import gzip
 import hashlib
-import json
 import logging
 import math
 import shutil
@@ -51,8 +52,61 @@ def _record_client_log(
         logger.error("Failed recording client sync log to control db: %s", exc)
 
 
+def _prepare_and_verify_local_sqlite(public_db_path: Path) -> None:
+    """Ensures rollback journal mode (header 1, 1) and verifies SQLite integrity locally."""
+    with open(public_db_path, "rb") as f_hdr:
+        header = f_hdr.read(32)
+    if len(header) < 32 or header[:16] != b"SQLite format 3\x00":
+        raise ValueError(f"Archivo SQLite inválido: {public_db_path}")
+
+    if (header[18], header[19]) != (1, 1):
+        with sqlite3.connect(str(public_db_path), timeout=30.0) as rw_conn:
+            rw_conn.execute("PRAGMA journal_mode = DELETE;")
+
+    uri = f"{public_db_path.resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+    try:
+        cursor = conn.cursor()
+        check_res = cursor.execute("PRAGMA integrity_check;").fetchone()
+        if not check_res or check_res[0] != "ok":
+            raise ValueError(f"Fallo de integridad local en SQLite: {check_res}")
+    finally:
+        conn.close()
+
+
+async def rollback_remote_catalog(config: Config) -> Dict[str, Any]:
+    """Requests an atomic Red/Green slot rollback on the remote PythonAnywhere server."""
+    sync_settings = config.get_sync_settings()
+    server_url = sync_settings.server_url.rstrip("/")
+    headers = {"Authorization": f"Bearer {sync_settings.api_token}"}
+
+    start_time = time.perf_counter()
+    async with aiohttp.ClientSession(
+        headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+    ) as session:
+        async with session.post(f"{server_url}/api/admin/sync/rollback") as resp:
+            text = await resp.text()
+            if resp.status != 200:
+                raise RuntimeError(f"Fallo al revertir slot ({resp.status}): {text}")
+            data: Dict[str, Any] = await resp.json()
+
+    total_ms = int((time.perf_counter() - start_time) * 1000)
+    _record_client_log(
+        control_db_path=config.get_control_db_path(),
+        status="ROLLBACK_SUCCESS",
+        duration_ms=total_ms,
+        file_size_bytes=int(data.get("database_size_bytes", 0)),
+    )
+    logger.info(
+        "Rollback remoto exitoso en %d ms: active_slot=%s",
+        total_ms,
+        data.get("active_slot"),
+    )
+    return data
+
+
 async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
-    """Compresses public.sqlite and uploads it in chunks to the public web server."""
+    """Compresses public.sqlite and uploads it in chunks to the inactive Red/Green slot."""
     sync_settings = config.get_sync_settings()
     if not sync_settings.sync_to_web:
         logger.info("sync_to_web is disabled in config.yaml. Skipping sync.")
@@ -66,14 +120,9 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
             f"No existe el archivo de base de datos en: {public_db_path}"
         )
 
-    # 1. Local SQLite integrity check before starting
+    # 1. Local SQLite journal normalization + integrity check before hashing
     logger.info("Verificando integridad local de %s...", public_db_path.name)
-    with sqlite3.connect(str(public_db_path)) as conn:
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA integrity_check;")
-        check_res = cursor.fetchone()
-        if not check_res or check_res[0] != "ok":
-            raise ValueError(f"Fallo de integridad local en SQLite: {check_res}")
+    _prepare_and_verify_local_sqlite(public_db_path)
 
     # 2. Pre-flight check: compute local uncompressed database SHA-256 and verify remote status
     hasher_db = hashlib.sha256()
@@ -91,22 +140,27 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
         async with aiohttp.ClientSession(
             headers=headers, timeout=aiohttp.ClientTimeout(total=20)
         ) as status_session:
-            async with status_session.get(f"{server_url}/api/admin/sync/status") as resp:
+            async with status_session.get(
+                f"{server_url}/api/admin/sync/status"
+            ) as resp:
                 if resp.status == 200:
                     status_data = await resp.json()
                     remote_sha256 = str(status_data.get("db_sha256", "")).lower()
+                    remote_slot = status_data.get("active_slot") or "legacy"
                     if remote_sha256 and remote_sha256 == local_db_sha256:
                         logger.info(
-                            "El catálogo en PythonAnywhere ya coincide exactamente con la versión local (SHA-256: %s). Sincronización omitida.",
+                            "El catálogo en PythonAnywhere (slot=%s) ya coincide exactamente con la versión local (SHA-256: %s). Sincronización omitida.",
+                            remote_slot,
                             local_db_sha256[:12],
                         )
                         print(
-                            f"\n[INFO] La base de datos en PythonAnywhere ya está actualizada (SHA-256: {local_db_sha256[:12]}). Sincronización omitida."
+                            f"\n[INFO] La base de datos en PythonAnywhere (slot={remote_slot}) ya está actualizada (SHA-256: {local_db_sha256[:12]}). Sincronización omitida."
                         )
                         return {
                             "status": "SKIPPED_IDENTICAL_HASH",
                             "message": "Database on remote server already matches local SHA-256.",
                             "sha256": local_db_sha256,
+                            "active_slot": status_data.get("active_slot"),
                         }
     except Exception as precheck_exc:
         logger.warning(
@@ -124,7 +178,7 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
     ):
         shutil.copyfileobj(f_in, f_out, length=64 * 1024)
 
-    # 3. Calculate SHA-256 and chunk requirements
+    # 4. Calculate compressed SHA-256 and chunk requirements
     hasher = hashlib.sha256()
     with open(outgoing_gz, "rb") as f_gz:
         while chunk := f_gz.read(64 * 1024):
@@ -142,28 +196,21 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
         target_sha256[:12],
     )
 
-    server_url = sync_settings.server_url.rstrip("/")
-    headers = {
-        "Authorization": f"Bearer {sync_settings.api_token}",
-    }
-
     timeout = aiohttp.ClientTimeout(total=sync_settings.timeout_seconds)
-
     upload_id: Optional[str] = None
 
     try:
-        async with aiohttp.ClientSession(
-            headers=headers, timeout=timeout
-        ) as session:
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             # Step A: POST /start
             start_payload = {
                 "filename": "public.sqlite.gz",
                 "expected_chunks": total_chunks,
                 "expected_size_bytes": gz_size,
                 "sha256": target_sha256,
+                "db_sha256": local_db_sha256,
                 "uncompressed_size_bytes": public_db_path.stat().st_size,
             }
-            logger.info("Iniciando sesión de subida en %s...", server_url)
+            logger.info("Iniciando sesión Red/Green de subida en %s...", server_url)
             async with session.post(
                 f"{server_url}/api/admin/sync/start", json=start_payload
             ) as resp:
@@ -174,10 +221,14 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
                     )
                 start_data = await resp.json()
                 upload_id = start_data["upload_id"]
+                active_slot_prev = start_data.get("active_slot") or "legacy"
+                target_slot = start_data.get("target_slot") or "unknown"
 
             logger.info(
-                "Sesión iniciada con éxito. Upload ID: %s. Subiendo fragmentos...",
+                "Sesión iniciada con éxito. Upload ID: %s (slot activo: %s -> slot destino: %s). Subiendo fragmentos...",
                 upload_id,
+                active_slot_prev,
+                target_slot,
             )
 
             # Step B: PUT chunks with retries
@@ -189,9 +240,7 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
                     max_retries = 3
                     for attempt in range(1, max_retries + 1):
                         try:
-                            chunk_headers = {
-                                "Content-Type": "application/octet-stream"
-                            }
+                            chunk_headers = {"Content-Type": "application/octet-stream"}
                             async with session.put(
                                 f"{server_url}/api/admin/sync/chunk/{upload_id}/{chunk_idx}",
                                 data=chunk_bytes,
@@ -226,7 +275,7 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
 
             # Step C: POST /finish
             logger.info(
-                "Todos los fragmentos transferidos. Solicitando ensamblado y descompresión..."
+                "Todos los fragmentos transferidos. Solicitando validación y cutover Red/Green..."
             )
             async with session.post(
                 f"{server_url}/api/admin/sync/finish/{upload_id}"
@@ -246,7 +295,9 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
             file_size_bytes=gz_size,
         )
         logger.info(
-            "Sincronización remota completada con éxito en %d ms.", total_ms
+            "Sincronización Red/Green completada con éxito en %d ms (slot activo: %s).",
+            total_ms,
+            finish_data.get("active_slot") or "-",
         )
         return {
             "status": "SUCCESS",
@@ -291,23 +342,35 @@ async def sync_catalog_to_web(config: Config) -> Dict[str, Any]:
 
 def run_sync_catalog_to_web(
     workdir_override: Optional[Path] = None,
+    rollback: bool = False,
 ) -> Dict[str, Any]:
-    """Synchronous entry point for running the catalog sync."""
-    config = read_config(workdir_override=workdir_override, should_create_override=False)
+    """Synchronous entry point for running catalog sync or remote Red/Green rollback."""
+    config = read_config(
+        workdir_override=workdir_override, should_create_override=False
+    )
+    if rollback:
+        return asyncio.run(rollback_remote_catalog(config))
     return asyncio.run(sync_catalog_to_web(config))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Sincroniza el catálogo public.sqlite local con el servidor público PythonAnywhere."
+        description="Sincroniza el catálogo public.sqlite local con el servidor público PythonAnywhere usando actualización Red/Green."
     )
     parser.add_argument(
         "--workdir", help="Directorio de trabajo (por defecto ~/Info/sur_en_precios)"
     )
+    parser.add_argument(
+        "--rollback",
+        action="store_true",
+        help="Revierte instantáneamente el servidor remoto al slot Red/Green anterior",
+    )
     args = parser.parse_args()
     workdir_path = Path(args.workdir).resolve() if args.workdir else None
 
-    result = run_sync_catalog_to_web(workdir_override=workdir_path)
+    result = run_sync_catalog_to_web(
+        workdir_override=workdir_path, rollback=args.rollback
+    )
     status = result.get("status")
     print(f"Resultado de sincronización: {status}")
     if status in ("ERROR", "FAILED"):
@@ -316,4 +379,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -1,23 +1,42 @@
-"""Sync Blueprint for reserved machine-to-machine database updates from UNPSJB."""
+"""Sync Blueprint for zero-downtime Red/Green database updates from UNPSJB."""
 
+from __future__ import annotations
+
+import errno
 import gzip
 import hashlib
+import io
 import json
 import logging
 import shutil
-import sqlite3
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 from sur_en_precios.config import Config
 from sur_en_precios.web.control_app.app import ControlBase, ScraperLogModel
+from sur_en_precios.web.public_app.catalog_slots import (
+    VALID_SLOTS,
+    SlotName,
+    activate_slot,
+    choose_target_slot,
+    cleanup_orphan_nfs_files,
+    compute_file_sha256,
+    get_catalog_meta_path,
+    get_slot_db_path,
+    get_slots_diagnostics,
+    rollback_slot,
+    safe_remove_sqlite_files,
+    validate_candidate_sqlite,
+)
+from sur_en_precios.web.public_app.database import ensure_public_session_factory
 from sur_en_precios.web.public_app.maintenance import (
     clear_maintenance_mode,
     is_maintenance_mode,
@@ -30,6 +49,59 @@ logger = logging.getLogger("sur_en_precios.public_app.sync")
 sync_bp = Blueprint("sync", __name__, url_prefix="/api/admin/sync")
 
 
+class ChunkPartStream(io.RawIOBase):
+    """Sequential binary stream over chunk_XXXXX.part files with progressive unlinking.
+
+    Updates the provided compressed-stream SHA-256 hasher on every byte read and
+    deletes each part file immediately upon reaching its EOF so peak disk usage
+    never holds both the compressed archive and the decompressed SQLite candidate.
+    """
+
+    def __init__(self, part_files: List[Path], hasher: Any) -> None:
+        super().__init__()
+        self._part_files = part_files
+        self._hasher = hasher
+        self._idx = 0
+        self._current_fh: Optional[io.BufferedReader] = None
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, b: Any) -> int:
+        view = memoryview(b)
+        if len(view) == 0:
+            return 0
+
+        while True:
+            if self._current_fh is None:
+                if self._idx >= len(self._part_files):
+                    return 0
+                self._current_fh = open(self._part_files[self._idx], "rb")
+
+            n = self._current_fh.readinto(view)
+            if n and n > 0:
+                self._hasher.update(view[:n])
+                return int(n)
+
+            finished_part = self._part_files[self._idx]
+            self._current_fh.close()
+            self._current_fh = None
+            self._idx += 1
+            try:
+                finished_part.unlink()
+            except Exception:
+                pass
+
+    def close(self) -> None:
+        if self._current_fh is not None:
+            try:
+                self._current_fh.close()
+            except Exception:
+                pass
+            self._current_fh = None
+        super().close()
+
+
 def _record_sync_log(
     control_db_path: Path,
     status: str,
@@ -39,7 +111,11 @@ def _record_sync_log(
 ) -> None:
     """Logs the incoming sync execution status into control.sqlite."""
     try:
-        engine = create_engine(f"sqlite:///{control_db_path}")
+        engine = create_engine(
+            f"sqlite:///{control_db_path}",
+            poolclass=NullPool,
+            connect_args={"timeout": 30.0},
+        )
         ControlBase.metadata.create_all(engine)
         with Session(engine) as session:
             log_entry = ScraperLogModel(
@@ -56,40 +132,80 @@ def _record_sync_log(
         logger.error("Failed recording sync log to control db: %s", exc)
 
 
-def _get_catalog_meta_path(config: Config) -> Path:
-    """Path to the catalog metadata cache containing current database SHA-256."""
-    return config.data_dir / "catalog_meta.json"
+def _has_active_staging_sessions(config: Config) -> bool:
+    """Checks if any staging directory currently exists."""
+    staging_root = config.sync_staging_dir
+    if not staging_root.exists():
+        return False
+    return any(p.is_dir() for p in staging_root.iterdir())
+
+
+def _cleanup_stale_staging_sessions(config: Config) -> None:
+    """Removes incomplete staging sessions unless an active cutover lock is held."""
+    staging_root = config.sync_staging_dir
+    if not staging_root.exists():
+        return
+
+    timeout_sec = config.get_sync_settings().timeout_seconds
+    now_ts = time.time()
+
+    for entry in list(staging_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        finish_lock = entry / "finishing.lock"
+        if finish_lock.exists():
+            try:
+                lock_age = now_ts - finish_lock.stat().st_mtime
+                if lock_age < timeout_sec:
+                    continue
+            except Exception:
+                pass
+        shutil.rmtree(entry, ignore_errors=True)
+
+    cleanup_orphan_nfs_files(staging_root)
 
 
 @sync_bp.route("/status", methods=["GET"])
 @sync_api_required
-def sync_status():
-    """Returns current server status, disk information, maintenance state, and database SHA-256."""
+def sync_status() -> Any:
+    """Returns current server status, Red/Green slot state, maintenance state, and database SHA-256."""
     config: Config = current_app.config["APP_CONFIG"]
-    public_db = config.get_public_db_path()
+    diag = get_slots_diagnostics(config)
+    active_db: Path = diag["active_path"]
+    active_slot: Optional[str] = diag["active_slot"]
 
-    db_exists = public_db.exists()
-    db_size = public_db.stat().st_size if db_exists else 0
+    db_exists = active_db.exists() and active_db.stat().st_size > 0
+    db_size = active_db.stat().st_size if db_exists else 0
 
     db_sha256 = ""
-    meta_path = _get_catalog_meta_path(config)
-    if meta_path.exists():
+    if active_slot in VALID_SLOTS:
+        db_sha256 = str(diag["slots"][active_slot].get("db_sha256", "")).lower()
+
+    meta_path = get_catalog_meta_path(config)
+    if not db_sha256 and meta_path.exists():
         try:
             with open(meta_path, "r", encoding="utf-8") as f_meta:
                 meta_data = json.load(f_meta)
-                db_sha256 = meta_data.get("db_sha256", "")
+                if int(meta_data.get("size_bytes", -1)) == db_size:
+                    db_sha256 = str(meta_data.get("db_sha256", "")).lower()
         except Exception:
             pass
 
     if not db_sha256 and db_exists and db_size > 0:
         try:
-            hasher = hashlib.sha256()
-            with open(public_db, "rb") as f_in:
-                while buf := f_in.read(64 * 1024):
-                    hasher.update(buf)
-            db_sha256 = hasher.hexdigest().lower()
-            with open(meta_path, "w", encoding="utf-8") as f_meta:
-                json.dump({"db_sha256": db_sha256, "size_bytes": db_size}, f_meta)
+            db_sha256 = compute_file_sha256(active_db)
+            tmp_meta = meta_path.with_name(f"{meta_path.name}.tmp")
+            with open(tmp_meta, "w", encoding="utf-8") as f_meta:
+                json.dump(
+                    {
+                        "active_slot": active_slot,
+                        "db_sha256": db_sha256,
+                        "size_bytes": db_size,
+                    },
+                    f_meta,
+                    indent=2,
+                )
+            tmp_meta.replace(meta_path)
         except Exception as exc:
             logger.warning("Could not compute db_sha256 for status: %s", exc)
 
@@ -97,9 +213,16 @@ def sync_status():
         {
             "status": "online",
             "maintenance_mode": is_maintenance_mode(config),
+            "active_slot": active_slot,
+            "previous_slot": diag["previous_slot"],
+            "standby_slot": diag["standby_slot"],
+            "rollback_available": diag["rollback_available"],
             "database_exists": db_exists,
+            "database_filename": active_db.name,
             "database_size_bytes": db_size,
             "db_sha256": db_sha256,
+            "slots": diag["slots"],
+            "sync_in_progress": _has_active_staging_sessions(config),
             "chunk_size_bytes": config.get_sync_settings().chunk_size_bytes,
             "server_time": datetime.now(timezone.utc).isoformat(),
         }
@@ -108,81 +231,68 @@ def sync_status():
 
 @sync_bp.route("/start", methods=["POST"])
 @sync_api_required
-def sync_start():
-    """Initiates an atomic sync session.
-
-    Enters maintenance mode (HTTP 503 for all regular traffic), disposes
-    connections to public.sqlite, and deletes existing catalog files to reclaim
-    storage immediately.
-    """
+def sync_start() -> Any:
+    """Initiates a zero-downtime Red/Green sync session targeting the inactive slot."""
     config: Config = current_app.config["APP_CONFIG"]
     payload: Dict[str, Any] = request.get_json(silent=True) or {}
 
     expected_chunks = int(payload.get("expected_chunks", 1))
     expected_size_bytes = int(payload.get("expected_size_bytes", 0))
     target_sha256 = str(payload.get("sha256", "")).strip().lower()
+    expected_db_sha256 = str(payload.get("db_sha256", "")).strip().lower()
 
     if expected_chunks <= 0:
         return jsonify({"error": "expected_chunks debe ser mayor a 0"}), 400
 
-    upload_id = uuid.uuid4().hex
+    diag = get_slots_diagnostics(config)
+    active_path: Path = diag["active_path"]
+    active_slot: Optional[SlotName] = diag["active_slot"]
+    target_slot: SlotName = choose_target_slot(active_slot)
 
-    # 1. Activate maintenance mode
-    set_maintenance_mode(
-        config, reason="Sincronización de catálogo UNPSJB en progreso"
-    )
+    # Only activate maintenance mode on cold start when NO catalog file exists at all
+    if not active_path.exists() or active_path.stat().st_size == 0:
+        set_maintenance_mode(
+            config, reason="Inicialización inicial de catálogo UNPSJB en progreso"
+        )
 
-    # 2. Dispose SQLAlchemy engine pool
-    public_engine = current_app.extensions.get("public_engine")
-    if public_engine:
-        try:
-            public_engine.dispose()
-            logger.info("Disposed SQLAlchemy public_engine connection pool.")
-        except Exception as exc:
-            logger.warning("Error disposing public_engine: %s", exc)
+    # 1. Reclaim space from abandoned staging sessions
+    _cleanup_stale_staging_sessions(config)
 
-    # 3. Truncate public.sqlite in-place to free blocks on NFS without .nfs silly-rename
-    public_db_path = config.get_public_db_path()
-    if public_db_path.exists():
-        try:
-            with open(public_db_path, "wb") as f_trunc:
-                f_trunc.truncate(0)
-            logger.info("Truncated public.sqlite to 0 bytes in-place to reclaim NFS blocks.")
-        except Exception as exc:
-            logger.warning("Could not truncate %s: %s", public_db_path, exc)
+    # 2. Reclaim space from the INACTIVE target slot before receiving chunks (active slot is untouched)
+    inactive_slot_path = get_slot_db_path(config, target_slot)
+    if inactive_slot_path.exists():
+        safe_remove_sqlite_files(inactive_slot_path)
+        logger.info(
+            "Reclaimed inactive slot '%s' (%s) prior to upload.",
+            target_slot,
+            inactive_slot_path.name,
+        )
 
-    # Remove companion WAL and SHM files
-    for ext in ("-wal", "-shm"):
-        f = public_db_path.parent / (public_db_path.name + ext)
-        if f.exists():
-            try:
-                f.unlink()
-            except Exception as exc:
-                logger.warning("Could not unlink %s: %s", f, exc)
+    # 3. Once Red/Green is active, retire any leftover legacy public.sqlite file to save quota
+    if active_slot in VALID_SLOTS:
+        legacy_db_path = config.get_public_db_path()
+        if legacy_db_path.exists() and legacy_db_path != active_path:
+            safe_remove_sqlite_files(legacy_db_path)
+            logger.info(
+                "Retired legacy %s file to free disk quota.", legacy_db_path.name
+            )
 
-    # Attempt to purge any orphaned .nfs* files in the data directory
-    try:
-        for nfs_file in public_db_path.parent.glob(".nfs*"):
-            try:
-                with open(nfs_file, "wb") as f_nfs:
-                    f_nfs.truncate(0)
-                nfs_file.unlink()
-                logger.info("Cleaned up orphaned NFS file: %s", nfs_file.name)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    cleanup_orphan_nfs_files(config.data_dir)
 
     # 4. Prepare staging directory and session manifest
+    upload_id = uuid.uuid4().hex
     staging_dir = config.sync_staging_dir / upload_id
     staging_dir.mkdir(parents=True, exist_ok=True)
 
     meta = {
         "upload_id": upload_id,
         "filename": payload.get("filename", "public.sqlite.gz"),
+        "active_slot_at_start": active_slot,
+        "target_slot": target_slot,
         "expected_chunks": expected_chunks,
         "expected_size_bytes": expected_size_bytes,
         "sha256": target_sha256,
+        "db_sha256": expected_db_sha256,
         "started_at": time.time(),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -190,8 +300,10 @@ def sync_start():
         json.dump(meta, f, indent=2)
 
     logger.info(
-        "Sync session started: upload_id=%s, expected_chunks=%d, size=%d bytes",
+        "Red/Green sync session started: upload_id=%s, active_slot=%s -> target_slot=%s, chunks=%d, size=%d bytes",
         upload_id,
+        active_slot or "legacy",
+        target_slot,
         expected_chunks,
         expected_size_bytes,
     )
@@ -201,8 +313,10 @@ def sync_start():
             {
                 "status": "ready",
                 "upload_id": upload_id,
+                "active_slot": active_slot,
+                "target_slot": target_slot,
                 "chunk_size_bytes": config.get_sync_settings().chunk_size_bytes,
-                "message": "Servidor listo en modo mantenimiento. Almacenamiento previo liberado.",
+                "message": f"Sesión Red/Green lista (slot destino: {target_slot}). Catálogo activo continúa en línea.",
             }
         ),
         201,
@@ -211,13 +325,17 @@ def sync_start():
 
 @sync_bp.route("/chunk/<upload_id>/<int:chunk_idx>", methods=["PUT"])
 @sync_api_required
-def sync_chunk(upload_id: str, chunk_idx: int):
-    """Receives and writes an individual binary chunk into the staging directory."""
+def sync_chunk(upload_id: str, chunk_idx: int) -> Any:
+    """Receives and writes an individual binary chunk into the isolated staging directory."""
     config: Config = current_app.config["APP_CONFIG"]
     staging_dir = config.sync_staging_dir / upload_id
+    meta_path = staging_dir / "meta.json"
 
-    if not staging_dir.exists() or not (staging_dir / "meta.json").exists():
+    if not staging_dir.exists() or not meta_path.exists():
         return jsonify({"error": "Sesión de subida inexistente o expirada"}), 404
+
+    if chunk_idx < 0:
+        return jsonify({"error": "Índice de fragmento inválido"}), 400
 
     chunk_data = request.get_data()
     if not chunk_data:
@@ -239,8 +357,8 @@ def sync_chunk(upload_id: str, chunk_idx: int):
 
 @sync_bp.route("/finish/<upload_id>", methods=["POST"])
 @sync_api_required
-def sync_finish(upload_id: str):
-    """Assembles chunks, validates SHA-256, decompresses in-place, verifies SQLite integrity, and restores normal service."""
+def sync_finish(upload_id: str) -> Any:
+    """Stream-decompresses chunks into an isolated candidate, validates lock-free, and atomically flips Red/Green slot."""
     start_time = time.perf_counter()
     config: Config = current_app.config["APP_CONFIG"]
     staging_dir = config.sync_staging_dir / upload_id
@@ -249,16 +367,34 @@ def sync_finish(upload_id: str):
     if not staging_dir.exists() or not meta_path.exists():
         return jsonify({"error": "Sesión de subida inexistente o expirada"}), 404
 
+    finish_lock = staging_dir / "finishing.lock"
+    if finish_lock.exists():
+        return jsonify(
+            {"error": "La finalización de esta sesión ya está en curso"}
+        ), 409
+
+    with open(finish_lock, "w", encoding="utf-8") as f_lock:
+        f_lock.write(datetime.now(timezone.utc).isoformat())
+
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
 
-    expected_chunks = meta["expected_chunks"]
-    expected_sha256 = meta.get("sha256", "")
+    expected_chunks = int(meta["expected_chunks"])
+    expected_gz_sha256 = str(meta.get("sha256", "")).strip().lower()
+    expected_db_sha256 = str(meta.get("db_sha256", "")).strip().lower()
+    raw_target_slot = meta.get("target_slot")
+    target_slot: SlotName = (
+        raw_target_slot
+        if raw_target_slot in VALID_SLOTS
+        else choose_target_slot(get_slots_diagnostics(config)["active_slot"])
+    )
 
-    # 1. Verify all chunk parts exist
+    # 1. Verify all chunk parts exist before streaming
+    part_files: List[Path] = []
     for idx in range(expected_chunks):
         part_file = staging_dir / f"chunk_{idx:05d}.part"
         if not part_file.exists():
+            finish_lock.unlink(missing_ok=True)
             return (
                 jsonify(
                     {
@@ -267,61 +403,52 @@ def sync_finish(upload_id: str):
                 ),
                 400,
             )
+        part_files.append(part_file)
 
-    # 2. Stream assemble chunks into incoming.sqlite.gz, unlinking parts as we go
-    archive_path = staging_dir / "incoming.sqlite.gz"
-    hasher = hashlib.sha256()
+    # 2. Single-pass streaming decompression + progressive chunk deletion + dual SHA-256 hashing
+    candidate_path = staging_dir / f"candidate_{target_slot}.sqlite"
+    compressed_hasher = hashlib.sha256()
+    db_hasher = hashlib.sha256()
 
-    with open(archive_path, "wb") as out_archive:
-        for idx in range(expected_chunks):
-            part_file = staging_dir / f"chunk_{idx:05d}.part"
-            with open(part_file, "rb") as in_part:
+    try:
+        raw_part_stream = ChunkPartStream(part_files, compressed_hasher)
+        with (
+            io.BufferedReader(raw_part_stream, buffer_size=64 * 1024) as buffered_in,
+            open(candidate_path, "wb") as db_out,
+        ):
+            with gzip.GzipFile(fileobj=buffered_in, mode="rb") as gz_in:
                 while True:
-                    buffer = in_part.read(64 * 1024)
-                    if not buffer:
+                    decompressed_buf = gz_in.read(64 * 1024)
+                    if not decompressed_buf:
                         break
-                    hasher.update(buffer)
-                    out_archive.write(buffer)
-            # Reclaim disk space immediately by deleting each part after appending
-            try:
-                part_file.unlink()
-            except Exception:
+                    db_hasher.update(decompressed_buf)
+                    db_out.write(decompressed_buf)
+            # Drain any trailing EOF boundary so the final part file is hashed and unlinked
+            while buffered_in.read(64 * 1024):
                 pass
-
-    calculated_sha256 = hasher.hexdigest().lower()
-    if expected_sha256 and calculated_sha256 != expected_sha256:
-        logger.error(
-            "Checksum mismatch: expected %s, got %s",
-            expected_sha256,
-            calculated_sha256,
-        )
+    except OSError as os_exc:
+        is_quota = os_exc.errno == errno.EDQUOT
+        logger.error("Decompression I/O error (quota=%s): %s", is_quota, os_exc)
+        safe_remove_sqlite_files(candidate_path)
         shutil.rmtree(staging_dir, ignore_errors=True)
         clear_maintenance_mode(config)
         _record_sync_log(
             control_db_path=config.get_control_db_path(),
-            status="ERROR_CHECKSUM",
+            status="ERROR_DISK_QUOTA" if is_quota else "ERROR_DECOMPRESS",
             duration_ms=int((time.perf_counter() - start_time) * 1000),
-            error_message="Checksum SHA-256 no coincide",
+            error_message=str(os_exc),
         )
         return (
             jsonify(
                 {
-                    "error": "Error de verificación de integridad (SHA-256 no coincide)"
+                    "error": f"Fallo al descomprimir la base de datos: {os_exc}",
                 }
             ),
-            400,
+            507 if is_quota else 500,
         )
-
-    # 3. Stream decompression directly to public.sqlite
-    public_db_path = config.get_public_db_path()
-    try:
-        with (
-            gzip.open(archive_path, "rb") as gz_in,
-            open(public_db_path, "wb") as db_out,
-        ):
-            shutil.copyfileobj(gz_in, db_out, length=64 * 1024)
     except Exception as exc:
         logger.error("Decompression failed: %s", exc)
+        safe_remove_sqlite_files(candidate_path)
         shutil.rmtree(staging_dir, ignore_errors=True)
         clear_maintenance_mode(config)
         _record_sync_log(
@@ -335,30 +462,73 @@ def sync_finish(upload_id: str):
             500,
         )
 
-    # 4. Immediately delete the gzipped archive
-    try:
-        archive_path.unlink()
-    except Exception:
-        pass
+    # 3. Validate compressed and uncompressed SHA-256 digests
+    calculated_gz_sha256 = compressed_hasher.hexdigest().lower()
+    calculated_db_sha256 = db_hasher.hexdigest().lower()
 
-    # 5. Run SQLite integrity check on the fresh database
-    try:
-        with sqlite3.connect(str(public_db_path)) as conn:
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA integrity_check;")
-            integrity_result = cursor.fetchone()
-            if not integrity_result or integrity_result[0] != "ok":
-                raise ValueError(
-                    f"PRAGMA integrity_check failed: {integrity_result}"
-                )
+    if expected_gz_sha256 and calculated_gz_sha256 != expected_gz_sha256:
+        logger.error(
+            "Compressed SHA-256 mismatch: expected %s, got %s",
+            expected_gz_sha256,
+            calculated_gz_sha256,
+        )
+        safe_remove_sqlite_files(candidate_path)
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        clear_maintenance_mode(config)
+        _record_sync_log(
+            control_db_path=config.get_control_db_path(),
+            status="ERROR_CHECKSUM",
+            duration_ms=int((time.perf_counter() - start_time) * 1000),
+            error_message="Checksum SHA-256 comprimido no coincide",
+        )
+        return (
+            jsonify(
+                {"error": "Error de verificación de integridad (SHA-256 no coincide)"}
+            ),
+            400,
+        )
 
-            # Apply production pragmas (WAL mode and busy timeout)
-            cursor.execute("PRAGMA journal_mode = WAL;")
-            cursor.execute("PRAGMA busy_timeout = 5000;")
+    if expected_db_sha256 and calculated_db_sha256 != expected_db_sha256:
+        logger.error(
+            "Uncompressed DB SHA-256 mismatch: expected %s, got %s",
+            expected_db_sha256,
+            calculated_db_sha256,
+        )
+        safe_remove_sqlite_files(candidate_path)
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        clear_maintenance_mode(config)
+        _record_sync_log(
+            control_db_path=config.get_control_db_path(),
+            status="ERROR_CHECKSUM",
+            duration_ms=int((time.perf_counter() - start_time) * 1000),
+            error_message="Checksum SHA-256 de base descomprimida no coincide",
+        )
+        return (
+            jsonify(
+                {
+                    "error": "Error de verificación de integridad (SHA-256 de base SQLite no coincide)"
+                }
+            ),
+            400,
+        )
+
+    # 4. Run lock-free SQLite validation on the isolated candidate file
+    try:
+        size_before_validation = candidate_path.stat().st_size
+        with open(candidate_path, "rb") as f_hdr:
+            hdr_before = f_hdr.read(28)
+        validation_stats = validate_candidate_sqlite(candidate_path)
+        with open(candidate_path, "rb") as f_hdr_after:
+            hdr_after = f_hdr_after.read(28)
+        # Recompute db_sha256 only if WAL->DELETE header normalization mutated candidate
+        if (
+            hdr_before != hdr_after
+            or candidate_path.stat().st_size != size_before_validation
+        ):
+            calculated_db_sha256 = compute_file_sha256(candidate_path)
     except Exception as exc:
-        logger.error("SQLite integrity check failed: %s", exc)
-        if public_db_path.exists():
-            public_db_path.unlink()
+        logger.error("Candidate SQLite validation failed: %s", exc)
+        safe_remove_sqlite_files(candidate_path)
         shutil.rmtree(staging_dir, ignore_errors=True)
         clear_maintenance_mode(config)
         _record_sync_log(
@@ -369,52 +539,41 @@ def sync_finish(upload_id: str):
         )
         return (
             jsonify(
-                {
-                    "error": f"Fallo de integridad de SQLite en base recibida: {exc}"
-                }
+                {"error": f"Fallo de integridad de SQLite en base recibida: {exc}"}
             ),
             500,
         )
 
-    # 6. Dispose connection pool again so SQLAlchemy re-binds cleanly
-    public_engine = current_app.extensions.get("public_engine")
-    if public_engine:
-        try:
-            public_engine.dispose()
-        except Exception:
-            pass
+    # 5. Atomic Red/Green cutover: rename candidate -> public_<target_slot>.sqlite & update catalog_state.json
+    new_state = activate_slot(
+        config=config,
+        target_slot=target_slot,
+        candidate_path=candidate_path,
+        db_sha256=calculated_db_sha256,
+        archive_sha256=calculated_gz_sha256,
+    )
 
-    # 7. Clean up staging directory
+    # 6. Refresh current worker binding immediately (sibling uWSGI workers rebind on next request)
+    ensure_public_session_factory(current_app)
+
+    # 7. Clean staging directory
     shutil.rmtree(staging_dir, ignore_errors=True)
 
-    # 8. Compute final uncompressed database SHA-256 and cache metadata
-    final_db_sha256 = ""
-    try:
-        db_hasher = hashlib.sha256()
-        with open(public_db_path, "rb") as f_db:
-            while buf := f_db.read(64 * 1024):
-                db_hasher.update(buf)
-        final_db_sha256 = db_hasher.hexdigest().lower()
-        meta_file = _get_catalog_meta_path(config)
-        with open(meta_file, "w", encoding="utf-8") as f_meta:
-            json.dump(
-                {
-                    "db_sha256": final_db_sha256,
-                    "archive_sha256": calculated_sha256,
-                    "synced_at": datetime.now(timezone.utc).isoformat(),
-                    "size_bytes": final_size,
-                },
-                f_meta,
-                indent=2,
-            )
-    except Exception as exc:
-        logger.warning("Could not write catalog_meta.json: %s", exc)
+    # 8. Optional immediate reclamation if retain_previous_slot is False
+    if not config.get_sync_settings().retain_previous_slot:
+        if new_state.previous_slot in VALID_SLOTS:
+            prev_path = get_slot_db_path(config, new_state.previous_slot)
+            safe_remove_sqlite_files(prev_path)
+        legacy_db = config.get_public_db_path()
+        if legacy_db.exists():
+            safe_remove_sqlite_files(legacy_db)
 
-    # 9. Deactivate maintenance mode
+    # 9. Release any cold-start or legacy maintenance lock
     clear_maintenance_mode(config)
 
+    active_meta = new_state.slots[target_slot]
+    final_size = active_meta.size_bytes
     total_duration_ms = int((time.perf_counter() - start_time) * 1000)
-    final_size = public_db_path.stat().st_size
 
     _record_sync_log(
         control_db_path=config.get_control_db_path(),
@@ -424,27 +583,32 @@ def sync_finish(upload_id: str):
     )
 
     logger.info(
-        "Sync completed successfully in %d ms (size: %d bytes, sha256: %s)",
+        "Red/Green cutover completed in %d ms: active_slot=%s, previous_slot=%s, size=%d bytes, sha256=%s, stats=%s",
         total_duration_ms,
+        new_state.active_slot,
+        new_state.previous_slot or "-",
         final_size,
-        final_db_sha256[:12] if final_db_sha256 else "-",
+        calculated_db_sha256[:12],
+        validation_stats,
     )
 
     return jsonify(
         {
             "status": "success",
-            "message": "Base de datos public.sqlite actualizada e indexada exitosamente.",
+            "message": f"Cutover Red/Green exitoso: slot '{target_slot}' activo.",
+            "active_slot": new_state.active_slot,
+            "previous_slot": new_state.previous_slot,
             "duration_ms": total_duration_ms,
             "database_size_bytes": final_size,
-            "db_sha256": final_db_sha256,
+            "db_sha256": calculated_db_sha256,
         }
     )
 
 
 @sync_bp.route("/abort/<upload_id>", methods=["POST"])
 @sync_api_required
-def sync_abort(upload_id: str):
-    """Aborts a sync session and cleans up temporary files."""
+def sync_abort(upload_id: str) -> Any:
+    """Aborts a staging sync session and cleans up temporary files without touching the active slot."""
     config: Config = current_app.config["APP_CONFIG"]
     staging_dir = config.sync_staging_dir / upload_id
 
@@ -461,3 +625,48 @@ def sync_abort(upload_id: str):
     )
 
     return jsonify({"status": "aborted", "upload_id": upload_id})
+
+
+@sync_bp.route("/rollback", methods=["POST"])
+@sync_api_required
+def sync_rollback() -> Any:
+    """Atomically switches active traffic back to the validated standby Red/Green slot."""
+    start_time = time.perf_counter()
+    config: Config = current_app.config["APP_CONFIG"]
+
+    try:
+        new_state = rollback_slot(config)
+        ensure_public_session_factory(current_app)
+        clear_maintenance_mode(config)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        logger.warning("Rollback rejected: %s", exc)
+        return jsonify({"error": str(exc)}), 409
+
+    active_slot = new_state.active_slot
+    active_meta = new_state.slots[active_slot] if active_slot else None
+    duration_ms = int((time.perf_counter() - start_time) * 1000)
+
+    _record_sync_log(
+        control_db_path=config.get_control_db_path(),
+        status="ROLLBACK_SUCCESS",
+        duration_ms=duration_ms,
+        file_size_bytes=active_meta.size_bytes if active_meta else 0,
+    )
+
+    logger.info(
+        "Red/Green rollback completed in %d ms: active_slot=%s, previous_slot=%s",
+        duration_ms,
+        new_state.active_slot,
+        new_state.previous_slot or "-",
+    )
+
+    return jsonify(
+        {
+            "status": "rolled_back",
+            "active_slot": new_state.active_slot,
+            "previous_slot": new_state.previous_slot,
+            "database_size_bytes": active_meta.size_bytes if active_meta else 0,
+            "db_sha256": active_meta.db_sha256 if active_meta else "",
+            "duration_ms": duration_ms,
+        }
+    )

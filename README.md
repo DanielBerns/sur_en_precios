@@ -62,18 +62,18 @@ All persistent data and configuration are housed by default in `~/Info/sur_en_pr
 
 | Database | File | Purpose | Persistence Lifecycle |
 | :--- | :--- | :--- | :--- |
-| **Public Catalog** | `public.sqlite` | Stores regional stores, products, daily prices, and reference prices. | **Rebuilt / swapped daily** via the automated ETL pipeline. |
+| **Public Catalog** | `public_red.sqlite` / `public_green.sqlite` *(local build: `public.sqlite`)* | Stores regional stores, products, daily prices, and reference prices. | **Swapped atomically daily** via zero-downtime **Red / Green** slot rotation (`catalog_state.json`). |
 | **User Data** | `user_data.sqlite` | Stores user credentials, hashed passwords, shopping baskets, and saved items. | **Permanent**. Never touched or wiped during catalog updates. |
 | **Control / Audit** | `control.sqlite` | Records pipeline execution timings, download sizes, error traces, and audit logs. | **Permanent** append-only operational telemetry. |
 
 > [!IMPORTANT]
-> **EAN-Decoupled Baskets**: To allow daily catalog regeneration without breaking saved baskets, `BasketItem` references items by standard **`ean` (barcode)** rather than internal database foreign keys. Even if `public.sqlite` is completely re-created, user baskets seamlessly link to the newest product data.
+> **EAN-Decoupled Baskets**: To allow daily catalog regeneration without breaking saved baskets, `BasketItem` references items by standard **`ean` (barcode)** rather than internal database foreign keys. Even when the active catalog switches between `public_red.sqlite` and `public_green.sqlite`, user baskets seamlessly link to the newest product data.
 
-All SQLite connections enforce WAL mode, busy timeouts, and referential integrity:
+Active Red/Green catalog slots on the public web server are opened in lock-free **read-only immutable URI mode** (`file:///...?mode=ro&immutable=1`) to eliminate NFS `fcntl` lock contention across multi-worker uWSGI processes, while mutable SQLite databases (`user_data.sqlite`, `control.sqlite`, and local ETL builds) enforce rollback journal mode and busy timeouts:
 ```sql
-PRAGMA journal_mode = WAL;
+PRAGMA journal_mode = DELETE;
 PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
+PRAGMA busy_timeout = 30000;
 ```
 
 ---
@@ -197,7 +197,7 @@ The tool will securely prompt for the administrator password with confirmation a
 
 Due to resource, CPU execution, and storage quotas (512 MB free tier) on PythonAnywhere, daily dataset harvesting, heavy regional ETL transformations, and deduplication **do not run directly on PythonAnywhere**.
 
-Instead, the system employs an off-host batch processing architecture with automated chunk-based streaming:
+Instead, the system employs an off-host batch processing architecture with **zero-downtime Red / Green slot updates** and progressive chunk streaming:
 
 ```mermaid
 flowchart LR
@@ -205,15 +205,17 @@ flowchart LR
         SEPA["SEPA Precios Claros"] --> Harvest["1. run_harvest (Descarga remota)"]
         Harvest --> ETL["2. run_etl (Limpieza y Taxonomía)"]
         ETL --> Window["3. Ventana 7 Días, Deduplicación y VACUUM"]
-        Window --> LocalDB[("public.sqlite (~112 MB)")]
+        Window --> LocalDB[("public.sqlite (~114 MB)")]
     end
 
     subgraph ProductionHost ["Servidor Web (PythonAnywhere)"]
-        LocalDB -->|4. Handshake SHA-256 y API Chunks| RemoteSync["/api/admin/sync (Modo Mantenimiento)"]
-        RemoteSync --> WebPublicDB[("public.sqlite (~112 MB)")]
-        WebPublicDB --> WebApp["Public Web App (Flask)"]
+        LocalDB -->|4. Handshake SHA-256 y API Chunks| RemoteSync["/api/admin/sync (Red / Green)"]
+        RemoteSync --> SlotRed[("public_red.sqlite")]
+        RemoteSync --> SlotGreen[("public_green.sqlite")]
+        SlotRed -.->|catalog_state.json| WebApp["Public Web App (Flask, mode=ro&immutable=1)"]
+        SlotGreen -.->|catalog_state.json| WebApp
         UserDB[("user_data.sqlite (Usuarios y Listas)")] --> WebApp
-        WebApp --> AdminView["/admin/system (Monitoreo y SHA-256)"]
+        WebApp --> AdminView["/admin/system (Slots, Rollback y SHA-256)"]
     end
 ```
 
@@ -225,7 +227,7 @@ When `sur_en_precios.tools.run_daily_update` runs, it executes four specialized 
 
 1. **Harvest Phase (`run_harvest`)**:
    - Queries `datos.produccion.gob.ar/dataset/sepa-precios` for new compressed archives.
-   - **Smart Skip Optimization**: If today's archives have no new files and `public.sqlite` is already present, the pipeline automatically skips ETL and remote upload to save CPU and network bandwidth. (Use `--force` to bypass this check).
+   - **Smart Skip Optimization**: If today's archives have no new files and `public.sqlite` is already present, the pipeline automatically skips local ETL regeneration while still verifying remote synchronization so previously failed uploads self-heal automatically. (Use `--force` to bypass this check).
 
 2. **Regional ETL & Data Normalization (`run_etl`)**:
    - Filters the national dataset down to the configured target province (e.g. `AR-U` for Chubut).
@@ -235,15 +237,14 @@ When `sur_en_precios.tools.run_daily_update` runs, it executes four specialized 
    - **7-Day Purge**: Deletes price observations older than 7 days (`delete_prices_before_date`) to maintain a lean, current price catalog.
    - **Latest-Price Deduplication**: Deduplicates `DailyPrice` records using SQLite window functions (`deduplicate_prices_keep_latest`), keeping only the single most recent price observation per `(ean, store_code)` within that 7-day window.
    - **Reference Price Recalculation**: Recomputes geometric mean reference prices and price dispersion metrics across all active store prices in the city.
-   - **SQLite `VACUUM` Compaction**: Reclaims deleted disk pages in SQLite. This reduces `public.sqlite` from **>296 MB down to ~112 MB** (~24 MB gzipped), guaranteeing that peak disk usage during extraction stays well below PythonAnywhere's 512 MB quota (>285 MB free headroom).
+   - **SQLite `VACUUM` Compaction**: Reclaims deleted disk pages in SQLite. This reduces `public.sqlite` from **>296 MB down to ~114 MB** (~29 MB gzipped), keeping dual-slot Red/Green storage (`~228 MB` peak) safely within PythonAnywhere's 512 MB quota.
 
-4. **Automated Web Synchronization (`sync_client`)**:
-   - Governed entirely by the `sync.sync_to_web` flag in `config.yaml` (**zero CLI flags required**).
-   - **Pre-Flight SHA-256 Handshake**: Queries `GET /api/admin/sync/status` on PythonAnywhere. If the remote database SHA-256 matches the local database, upload is safely skipped (`SKIPPED_IDENTICAL_HASH`).
-   - If updated, compresses `public.sqlite` into a temporary `public.sqlite.gz`.
-   - Calls `POST /api/admin/sync/start`: Puts the public web app into maintenance mode and performs in-place `truncate(0)` on the remote database to prevent NFS lock conflicts (`.nfs*`).
-   - Streams chunks (default 2 MB) via `POST /api/admin/sync/upload`.
-   - Calls `POST /api/admin/sync/finish`: Decompresses, validates SQLite database integrity, and releases maintenance mode.
+4. **Zero-Downtime Red / Green Web Synchronization (`sync_client`)**:
+   - Governed entirely by the `sync.sync_to_web` flag in `config.yaml` (**zero CLI flags required** for automated sync).
+   - **Local Preparation & Pre-Flight SHA-256 Handshake**: Enforces `PRAGMA journal_mode = DELETE` locally, verifies `PRAGMA integrity_check`, and queries `GET /api/admin/sync/status` on PythonAnywhere. If the remote active slot SHA-256 matches the local database, upload is skipped (`SKIPPED_IDENTICAL_HASH`).
+   - **Zero-Downtime Session Start (`POST /api/admin/sync/start`)**: Selects the inactive slot (`red` if `green` is active, or `green` if `red` is active) and reclaims any prior file in that inactive slot while the active slot continues serving live public traffic (`HTTP 200`, no `503` maintenance lock).
+   - **Chunked Transfer (`PUT /api/admin/sync/chunk/<upload_id>/<idx>`)**: Streams compressed chunks (default 2 MB) with automatic retry/backoff into an isolated staging directory.
+   - **Single-Pass Streaming Cutover (`POST /api/admin/sync/finish/<upload_id>`)**: Stream-decompresses chunks while unlinking each `.part` file on EOF (eliminating temporary archive peak overhead), verifies both compressed and uncompressed SHA-256 digests, runs lock-free read-only `PRAGMA integrity_check` (`mode=ro&immutable=1`), atomically renames the candidate into `public_<slot>.sqlite`, and atomically flips `catalog_state.json`. All uWSGI workers automatically rebind to the new slot on their next request without server reload.
 
 ---
 
@@ -252,7 +253,7 @@ When `sur_en_precios.tools.run_daily_update` runs, it executes four specialized 
 From the `sur_en_precios/sur_en_precios` directory on the UNPSJB computer:
 
 #### 1. Standard Run
-Executes the full pipeline, automatically skipping redundant ETL/upload if no new SEPA files exist:
+Executes the full pipeline, automatically skipping redundant local ETL if no new SEPA files exist and skipping remote upload if the active remote slot SHA-256 already matches:
 ```bash
 uv run python -m sur_en_precios.tools.run_daily_update
 ```
@@ -272,6 +273,12 @@ uv run python -m sur_en_precios.tools.run_daily_update --workdir ~/Info/sur_en_p
 If `public.sqlite` has already been generated and you only need to push it to PythonAnywhere:
 ```bash
 uv run python -m sur_en_precios.tools.sync_client
+```
+
+#### 5. Instant Remote Rollback (Revert to Previous Slot)
+If `retain_previous_slot: true` (default), you can atomically switch PythonAnywhere back to the previous validated Red/Green slot in milliseconds (also available via `/admin/system` in the browser):
+```bash
+uv run python -m sur_en_precios.tools.sync_client --rollback
 ```
 
 ---
@@ -323,10 +330,11 @@ On the receiving server, `sync_to_web` must be `false`:
 sync:
   sync_to_web: false                            # Web host is receiver only
   api_token: "TU_TOKEN_SECRETO_GENERADO_DE_64_CARACTERES"
+  retain_previous_slot: true                    # Keep standby slot for instant rollback (set false to delete immediately after cutover)
 ```
 
 > [!NOTE]
-> All sync activation is controlled **strictly via `config.yaml`** (`sync.sync_to_web: true`). There are intentionally no CLI flags to prevent accidental sync overrides or credential exposure in process lists.
+> Automated sync activation is controlled **strictly via `config.yaml`** (`sync.sync_to_web: true`).
 
 ---
 
@@ -347,12 +355,13 @@ uv run python -m sur_en_precios.tools.log_analyzer --summary
 uv run python -m sur_en_precios.tools.log_analyzer --tail 25
 ```
 
-#### 3. Remote Verification in Web Dashboard
+#### 3. Remote Verification & Rollback in Web Dashboard
 Log in as administrator and visit `/admin/system` (e.g., `https://<tu_usuario>.pythonanywhere.com/admin/system`):
-- **Database Status**: File size, last modification time, and SQLite WAL mode.
+- **Red / Green Slot Status**: Displays the active slot (`RED` or `GREEN`), standby slot availability, file size, last modification time, and read-only immutable SQLite mode.
+- **Instant Rollback**: One-click button to atomically revert to the standby slot when available.
 - **SHA-256 Checksum**: Displays the active remote database hash matching the local catalog.
 - **Catalog Metrics**: Total products, active stores, and regional price counts.
-- **Sync History**: Audit trail of recent remote uploads with timestamps and file sizes.
+- **Sync History**: Audit trail of recent remote uploads and rollbacks with timestamps and durations.
 
 ---
 
@@ -378,7 +387,7 @@ When logged in with the administrator account, the navigation bar displays a dir
 - **Dashboard (`/admin`)**: System overview, active users, total baskets, catalog status.
 - **User Management (`/admin/users`)**: Inspect all registered users and last login timestamps; delete users with cascade removal of their baskets.
 - **Basket Audit (`/admin/baskets`)**: Audit and inspect all shopping lists (both public and private) and review item contents.
-- **Estado del Catálogo (`/admin/system`)**: Diagnóstico del archivo `public.sqlite` en disco (tamaño, fecha de sincronización, modo WAL), métricas del catálogo público e historial de telemetría.
+- **Estado del Catálogo (`/admin/system`)**: Diagnóstico de slots Red / Green (`public_red.sqlite` / `public_green.sqlite`), rollback instantáneo al slot anterior, métricas del catálogo público e historial de telemetría.
 
 ### 3. Launch the Private Control Dashboard
 
@@ -427,8 +436,8 @@ application = create_app()
 | Tool | Module Path | Purpose | Key Arguments |
 | :--- | :--- | :--- | :--- |
 | **Create Admin** | `sur_en_precios.tools.create_admin` | Bootstraps the unique server administrator. | `--username`, `--password`, `--workdir` |
-| **Daily Update** | `sur_en_precios.tools.run_daily_update` | Orchestrates daily harvest + regional ETL + logging + sync. | `--workdir`, `--force` |
-| **Sync Client** | `sur_en_precios.tools.sync_client` | Streams `public.sqlite` directly to web server via chunks. | `--workdir` |
+| **Daily Update** | `sur_en_precios.tools.run_daily_update` | Orchestrates daily harvest + regional ETL + logging + Red/Green sync. | `--workdir`, `--force` |
+| **Sync Client** | `sur_en_precios.tools.sync_client` | Streams `public.sqlite` to the inactive Red/Green slot or triggers rollback. | `--workdir`, `--rollback` |
 | **Run Harvest** | `sur_en_precios.tools.run_harvest` | Scrapes remote SEPA web portal and downloads archives. | `--workdir`, `--force`, `--create` |
 | **Run ETL** | `sur_en_precios.tools.run_etl` | Processes raw CSV files into regional `public.sqlite`. | `--region`, `--date`, `--workdir`, `--create` |
 | **Log Analyzer** | `sur_en_precios.tools.log_analyzer` | Queries and filters structured JSON execution logs. | `--summary`, `--level`, `--search`, `--tail` |

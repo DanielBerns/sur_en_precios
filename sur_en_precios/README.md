@@ -69,11 +69,11 @@ All persistent data and configuration are housed by default in `~/Info/sur_en_pr
 > [!IMPORTANT]
 > **EAN-Decoupled Baskets**: To allow daily catalog regeneration without breaking saved baskets, `BasketItem` references items by standard **`ean` (barcode)** rather than internal database foreign keys. Even if `public.sqlite` is completely re-created, user baskets seamlessly link to the newest product data.
 
-All SQLite connections enforce WAL mode, busy timeouts, and referential integrity:
+All SQLite connections enforce busy timeouts and referential integrity (using standard rollback journal mode on network storage like PythonAnywhere NFS to eliminate `-shm` locking conflicts):
 ```sql
-PRAGMA journal_mode = WAL;
+PRAGMA journal_mode = DELETE;
 PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
+PRAGMA busy_timeout = 30000;
 ```
 
 ---
@@ -199,7 +199,7 @@ The tool will securely prompt for the administrator password with confirmation a
 
 Due to resource and CPU execution limits on PythonAnywhere (such as processing tarpit throttling), the daily dataset harvesting and heavy regional ETL processing **does not run directly on PythonAnywhere**.
 
-Instead, the system employs an off-host batch processing architecture:
+Instead, the system employs an off-host batch processing architecture with **zero-downtime Red / Green slot updates**:
 
 ```mermaid
 flowchart LR
@@ -210,10 +210,13 @@ flowchart LR
     end
 
     subgraph ProductionHost ["Servidor Web (PythonAnywhere)"]
-        OutputDB -->|Transferencia SCP / Rsync| WebPublicDB[("public.sqlite")]
-        WebPublicDB --> WebApp["Public Web App"]
+        OutputDB -->|API Chunks SHA-256| RemoteSync["/api/admin/sync (Red / Green)"]
+        RemoteSync --> SlotRed[("public_red.sqlite")]
+        RemoteSync --> SlotGreen[("public_green.sqlite")]
+        SlotRed -.->|catalog_state.json| WebApp["Public Web App (mode=ro&immutable=1)"]
+        SlotGreen -.->|catalog_state.json| WebApp
         UserDB[("user_data.sqlite")] --> WebApp
-        WebApp --> AdminView["/admin/system (Diagnóstico)"]
+        WebApp --> AdminView["/admin/system (Diagnóstico y Rollback)"]
     end
 ```
 
@@ -222,25 +225,28 @@ flowchart LR
 On the dedicated processing server at the **Universidad Nacional de la Patagonia San Juan Bosco (UNPSJB)**, the daily update pipeline is executed via cron:
 
 ```bash
-# Execute end-to-end harvest + ETL pipeline on UNPSJB server
+# Execute end-to-end harvest + ETL + Red/Green sync pipeline on UNPSJB server
 uv run python -m sur_en_precios.tools.run_daily_update --workdir ~/Info/sur_en_precios
 
 # Force re-download even if today's archive is already cached
 uv run python -m sur_en_precios.tools.run_daily_update --force
 ```
 
-This generates a fresh, indexed `public.sqlite` containing all current regional prices, stores, and reference metrics.
+This generates a fresh, indexed `public.sqlite` containing all current regional prices, stores, and reference metrics, and automatically synchronizes it when `sync.sync_to_web: true` is set in `config.yaml`.
 
-### 2. Synchronization to Production (PythonAnywhere)
+### 2. Red / Green Synchronization & Instant Rollback (PythonAnywhere)
 
-The resulting `public.sqlite` is uploaded to the production working directory on PythonAnywhere:
+You can also push an already-built `public.sqlite` or revert to the standby slot on PythonAnywhere directly via `sync_client`:
 
 ```bash
-# Example synchronization command via scp / rsync:
-scp ~/Info/sur_en_precios/public.sqlite <user>@ssh.pythonanywhere.com:/home/<user>/Info/sur_en_precios/public.sqlite
+# Stream compressed chunks into the inactive Red/Green slot and cut over atomically:
+uv run python -m sur_en_precios.tools.sync_client
+
+# Instantly roll back PythonAnywhere to the previous standby slot:
+uv run python -m sur_en_precios.tools.sync_client --rollback
 ```
 
-Because user accounts, passwords, and shopping baskets are stored in the decoupled `user_data.sqlite` database (referencing articles by standard `ean`), replacing `public.sqlite` updates all catalog prices and products instantly with zero downtime and zero risk to user data.
+Because active slots (`public_red.sqlite` / `public_green.sqlite`) are opened in read-only immutable mode and user accounts/baskets reside in `user_data.sqlite` (referencing articles by standard `ean`), cutover happens in milliseconds with zero downtime, zero NFS lock contention, and zero risk to user data.
 
 ---
 
@@ -289,7 +295,7 @@ PythonAnywhere uses `pip` inside virtual environments. The production `requireme
 # In PythonAnywhere Bash Console (Python 3.10):
 mkvirtualenv --python=python3.10 sur-en-precios-env
 pip install -r requirements.txt
-pip install -e ./sur_en_precios
+pip install -e ./
 ```
 
 In the PythonAnywhere **Web** tab:
