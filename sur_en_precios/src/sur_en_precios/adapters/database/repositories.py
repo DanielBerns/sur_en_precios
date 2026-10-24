@@ -9,12 +9,13 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, aliased, joinedload, noload, selectinload
 
 from sur_en_precios.domain.cleaner.text_utils import (
     slugify,
+    strip_accents,
 )
 from sur_en_precios.domain.models import ArticlePriceStats, StorePriceDetail
 from sur_en_precios.domain.models_public import (
@@ -44,6 +45,71 @@ from sur_en_precios.domain.services import (
 logger = logging.getLogger("sur_en_precios.repositories")
 
 CHUNK_SIZE = 500
+
+_SEARCH_STOPWORDS = frozenset(
+    {
+        "a",
+        "al",
+        "con",
+        "de",
+        "del",
+        "el",
+        "en",
+        "la",
+        "las",
+        "lo",
+        "los",
+        "o",
+        "para",
+        "por",
+        "sin",
+        "u",
+        "un",
+        "una",
+        "unas",
+        "unos",
+        "x",
+        "y",
+    }
+)
+
+
+def _sql_unaccent_lower(col: Any) -> Any:
+    """SQLite expression normalizing Spanish accented characters and ñ to lowercase ASCII."""
+    expr: Any = func.lower(func.coalesce(col, ""))
+    for src, dst in (
+        ("á", "a"),
+        ("é", "e"),
+        ("í", "i"),
+        ("ó", "o"),
+        ("ú", "u"),
+        ("Á", "a"),
+        ("É", "e"),
+        ("Í", "i"),
+        ("Ó", "o"),
+        ("Ú", "u"),
+        ("ü", "u"),
+        ("Ü", "u"),
+        ("ñ", "n"),
+        ("Ñ", "n"),
+    ):
+        expr = func.replace(expr, src, dst)
+    return expr
+
+
+def _fast_fuzzy_ratio(q_norm: str, target_norm: str, min_ratio: float = 0.0) -> float:
+    """Computes fuzzy_similarity_ratio with an O(1) length-ratio upper-bound short-circuit."""
+    if not q_norm or not target_norm:
+        return 0.0
+    if q_norm == target_norm:
+        return 1.0
+    if q_norm in target_norm:
+        return max(0.7, len(q_norm) / len(target_norm))
+    max_len = max(len(q_norm), len(target_norm))
+    min_len = min(len(q_norm), len(target_norm))
+    if min_ratio > 0.0 and (min_len / max_len) < min_ratio:
+        return 0.0
+    return fuzzy_similarity_ratio(q_norm, target_norm)
 
 
 def _get_brand_str(item: Any) -> Optional[str]:
@@ -276,8 +342,8 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                     "branch_name": _get_store_name(s),
                     "address": str(addr) if addr is not None else None,
                     "city": _get_city_name(s),
-                    "province": getattr(s, "province", "Buenos Aires"),
-                    "province_code": getattr(s, "province_code", "AR-B"),
+                    "province": getattr(s, "province", "Chubut"),
+                    "province_code": getattr(s, "province_code", "AR-U"),
                     "latitude": float(lat) if lat is not None else None,
                     "longitude": float(lon) if lon is not None else None,
                 }
@@ -293,6 +359,14 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             self._session.execute(stmt)
 
         self._session.commit()
+
+    def delete_stores_without_prices(self) -> int:
+        """Removes PointOfSale rows that have no active DailyPrice observations."""
+        active_codes_subq = select(DailyPrice.store_code).distinct()
+        stmt = delete(PointOfSale).where(~PointOfSale.code.in_(active_codes_subq))
+        res = self._session.execute(stmt)
+        self._session.commit()
+        return int(getattr(res, "rowcount", 0) or 0)
 
     def search_articles_paginated(
         self,
@@ -328,12 +402,19 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                     start = (page - 1) * per_page
                     return list(ean_res[start : start + per_page]), total
 
+            q_lower = q.lower()
+            q_norm = strip_accents(q_lower)
+
             if mode == "exact":
-                pattern = f"%{q}%"
+                norm_pattern = f"%{q_norm}%"
                 filter_cond = (
-                    (Article.name.ilike(pattern))
-                    | (Article.clean_description.ilike(pattern))
-                    | (Article.brand_name.ilike(pattern))
+                    (_sql_unaccent_lower(Article.name).like(norm_pattern))
+                    | (
+                        _sql_unaccent_lower(Article.clean_description).like(
+                            norm_pattern
+                        )
+                    )
+                    | (_sql_unaccent_lower(Article.brand_name).like(norm_pattern))
                     | (Article.ean == q)
                 )
                 count_stmt = select(func.count(Article.id)).where(filter_cond)
@@ -349,150 +430,282 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 items = list(self._session.execute(stmt).scalars().unique().all())
                 return items, total
 
-            # Fuzzy / Approximate Token Matching
-            candidates_map: Dict[str, Article] = {}
+            # Fuzzy / Approximate Token Matching using lightweight candidate tuples
+            # Tuple layout: (id, ean, name, clean_description, brand_name, category_name)
+            candidates_map: Dict[str, Tuple[int, str, str, str, str, str]] = {}
+
+            cand_base = select(
+                Article.id,
+                Article.ean,
+                Article.name,
+                Article.clean_description,
+                Article.brand_name,
+                Category.name,
+            ).outerjoin(Category, Article.category_id == Category.id)
+
+            def _collect_candidates(
+                where_cond: Any, limit_rows: Optional[int] = None
+            ) -> None:
+                c_stmt = cand_base.where(where_cond)
+                if limit_rows is not None:
+                    c_stmt = c_stmt.limit(limit_rows)
+                for row in self._session.execute(c_stmt).all():
+                    candidates_map[row[1]] = (
+                        row[0],
+                        row[1],
+                        row[2] or "",
+                        row[3] or "",
+                        row[4] or "",
+                        row[5] or "",
+                    )
 
             # Exact EAN check
-            for a in (
-                self._session.execute(base_stmt.where(Article.ean == q))
-                .scalars()
-                .unique()
-            ):
-                candidates_map[a.ean] = a
+            _collect_candidates(Article.ean == q)
 
-            tokens = [t.lower() for t in q.split() if t]
-            conditions = []
-            for tok in tokens:
-                t_pat = f"%{tok}%"
-                conditions.extend(
-                    [
-                        Article.name.ilike(t_pat),
-                        Article.clean_description.ilike(t_pat),
-                        Article.brand_name.ilike(t_pat),
-                    ]
+            searchable_col = _sql_unaccent_lower(
+                func.coalesce(Article.name, "")
+                + " "
+                + func.coalesce(Article.clean_description, "")
+                + " "
+                + func.coalesce(Article.brand_name, "")
+            )
+
+            raw_tokens = [t.lower() for t in q.split() if t]
+            norm_tokens = [strip_accents(t) for t in raw_tokens if strip_accents(t)]
+            significant_tokens = [
+                t for t in norm_tokens if t not in _SEARCH_STOPWORDS and len(t) >= 3
+            ]
+
+            if len(significant_tokens) > 1:
+                # Prefer articles containing all significant tokens first
+                _collect_candidates(
+                    and_(
+                        *[searchable_col.like(f"%{tok}%") for tok in significant_tokens]
+                    ),
+                    limit_rows=3000,
+                )
+                if len(candidates_map) < 50:
+                    _collect_candidates(
+                        or_(
+                            *[
+                                searchable_col.like(f"%{tok}%")
+                                for tok in significant_tokens
+                            ]
+                        ),
+                        limit_rows=1500,
+                    )
+            elif len(significant_tokens) == 1:
+                _collect_candidates(
+                    searchable_col.like(f"%{significant_tokens[0]}%"),
+                    limit_rows=3000,
+                )
+            elif q_norm:
+                # Query consists solely of short tokens / stopwords (e.g. "te", "3d", "la")
+                _collect_candidates(
+                    or_(
+                        searchable_col.like(f"{q_norm}%"),
+                        searchable_col.like(f"% {q_norm}%"),
+                        _sql_unaccent_lower(Article.brand_name).like(f"%{q_norm}%"),
+                    ),
+                    limit_rows=1000,
                 )
 
-            if conditions:
-                token_stmt = base_stmt.where(or_(*conditions))
-                for a in self._session.execute(token_stmt).scalars().unique():
-                    candidates_map[a.ean] = a
+            eval_tokens = significant_tokens if significant_tokens else norm_tokens
 
-            # Fallback if few candidates: check brands
-            if len(candidates_map) < 50:
-                all_brands = self._session.execute(select(Brand)).scalars().all()
-                matched_brand_names = [
-                    b.name
-                    for b in all_brands
+            # Fallback if few candidates: check brands with accent-normalized similarity
+            if len(candidates_map) < 50 and eval_tokens:
+                all_brand_names = (
+                    self._session.execute(select(Brand.name)).scalars().all()
+                )
+                matched_brand_names: List[str] = []
+                for b_name in all_brand_names:
+                    b_norm = strip_accents(b_name).lower()
+                    if not b_norm:
+                        continue
+                    if _fast_fuzzy_ratio(q_norm, b_norm, 0.75) >= 0.75:
+                        matched_brand_names.append(b_name)
+                        continue
+                    b_words = [w for w in b_norm.split() if len(w) >= 3]
                     if any(
-                        fuzzy_similarity_ratio(tok, b.name) >= 0.75 for tok in tokens
-                    )
-                    or fuzzy_similarity_ratio(q, b.name) >= 0.75
-                ]
-                if matched_brand_names:
-                    brand_stmt = base_stmt.where(
-                        Article.brand_name.in_(matched_brand_names)
-                    )
-                    for a in self._session.execute(brand_stmt).scalars().unique():
-                        candidates_map[a.ean] = a
+                        _fast_fuzzy_ratio(tok, b_norm, 0.75) >= 0.75
+                        or any(
+                            _fast_fuzzy_ratio(tok, bw, 0.75) >= 0.75 for bw in b_words
+                        )
+                        for tok in eval_tokens
+                    ):
+                        matched_brand_names.append(b_name)
 
-            # If still few candidates, test sample
+                if matched_brand_names:
+                    _collect_candidates(
+                        Article.brand_name.in_(matched_brand_names),
+                        limit_rows=1500,
+                    )
+
+            # Bounded typo-stem SQL fallback (avoids full-table ORM scans on 50k+ catalogs)
             if len(candidates_map) < 50:
-                sample_stmt = base_stmt
-                for a in self._session.execute(sample_stmt).scalars().unique():
-                    candidates_map[a.ean] = a
+                stem_conds = []
+                for tok in significant_tokens:
+                    if len(tok) >= 4:
+                        p3 = tok[:3]
+                        s3 = tok[-3:]
+                        stem_conds.extend(
+                            [
+                                searchable_col.like(f"{p3}%"),
+                                searchable_col.like(f"% {p3}%"),
+                                searchable_col.like(f"%{s3} %"),
+                                searchable_col.like(f"%{s3}"),
+                            ]
+                        )
+                if stem_conds:
+                    _collect_candidates(or_(*stem_conds), limit_rows=1200)
+
+                if len(candidates_map) < 20:
+                    short_stem_conds = [
+                        or_(
+                            searchable_col.like(f"{tok[:2]}%"),
+                            searchable_col.like(f"% {tok[:2]}%"),
+                        )
+                        for tok in significant_tokens
+                        if 4 <= len(tok) <= 8
+                    ]
+                    if short_stem_conds:
+                        _collect_candidates(or_(*short_stem_conds), limit_rows=800)
+
+            # Precompile per-query regexes outside the scoring loop
+            word_q_re = re.compile(r"\b" + re.escape(q_norm) + r"\b")
+            deriv_q_re = re.compile(
+                r"\b(de|con|sabor|a base de)\s+" + re.escape(q_norm) + r"\b"
+            )
+            deriv_prefix_re = re.compile(
+                r"^(tostadas?|galletit?as?|alfajor(es)?|oblea|snack|fideos?|harina|cerveza|copos|cereal(es)?|barra|condimento)\b"
+            )
+            vinagre_prefix_re = re.compile(r"^(v\s+|vinagre\s+)")
+            std_pkg_re = re.compile(r"\b(1\s*kg|500\s*g|1000\s*g)\b")
+            dirty_unit_re = re.compile(r"\b(para\s+1\s*u)\b")
 
             # Rank candidates by relevance and similarity score
-            scored: List[Tuple[float, str, Article]] = []
-            q_lower = q.lower()
+            scored: List[Tuple[float, str, int]] = []
 
-            for a in candidates_map.values():
-                if a.ean == q:
-                    scored.append((1000.0, a.name or "", a))
+            for (
+                art_id,
+                art_ean,
+                art_name,
+                art_clean_desc,
+                art_brand,
+                art_cat,
+            ) in candidates_map.values():
+                if art_ean == q:
+                    scored.append((1000.0, art_name, art_id))
                     continue
 
-                desc_str = (a.name or a.clean_description or "").lower()
-                b_str = (a.brand_name or "").lower()
-                cat_str = (a.category.name if a.category else "").lower()
+                desc_str = (art_name or art_clean_desc).lower()
+                desc_norm = strip_accents(desc_str)
+                b_norm = strip_accents(art_brand.lower())
+                cat_norm = strip_accents(art_cat.lower())
 
                 # Exact match on name
-                if desc_str == q_lower:
-                    scored.append((500.0, a.name or "", a))
+                if desc_norm == q_norm:
+                    scored.append((500.0, art_name, art_id))
                     continue
 
                 score = 0.0
 
                 # 1. Primary Product: Does the description start with the query?
                 # e.g. "Arroz Gallo..." when searching "arroz"
-                if desc_str.startswith(q_lower + " "):
+                if desc_norm.startswith(q_norm + " "):
                     score += 100.0
-                elif q_lower in desc_str:
+                elif q_norm in desc_norm:
                     score += 40.0
 
+                # Direct brand match boost (e.g. "la anonima", "bimbo", "la serenisima")
+                if b_norm:
+                    if b_norm == q_norm:
+                        score += 45.0
+                    elif len(q_norm) >= 3 and q_norm in b_norm:
+                        score += 25.0
+
                 # 2. Whole word match
-                if re.search(r"\b" + re.escape(q_lower) + r"\b", desc_str):
+                if word_q_re.search(desc_norm):
                     score += 20.0
 
                 # 3. Category match
-                if q_lower in cat_str:
+                if q_norm in cat_norm:
                     score += 15.0
-                    if desc_str.startswith(q_lower + " "):
+                    if desc_norm.startswith(q_norm + " "):
                         score += 15.0
 
                 # 4. Derivative penalty
                 # When searching a staple (like "arroz"), items that are snacks, desserts,
                 # or derivatives ("tostadas de arroz", "galletitas de arroz", "arroz con leche",
                 # "vinagre de arroz") should be penalized so pure products rank first.
-                if re.search(
-                    r"\b(de|con|sabor|a base de)\s+" + re.escape(q_lower) + r"\b",
-                    desc_str,
-                ):
+                if deriv_q_re.search(desc_norm):
                     score -= 50.0
-                if "con leche" in desc_str or "con salsa" in desc_str:
+                if "con leche" in desc_norm or "con salsa" in desc_norm:
                     score -= 50.0
-                if re.match(
-                    r"^(tostadas?|galletit?as?|alfajor(es)?|oblea|snack|fideos?|harina|cerveza|copos|cereal(es)?|barra|condimento)\b",
-                    desc_str,
-                ):
+                if deriv_prefix_re.match(desc_norm):
                     score -= 60.0
-                if re.match(r"^(v\s+|vinagre\s+)", desc_str):
+                if vinagre_prefix_re.match(desc_norm):
                     score -= 60.0
 
                 # 5. Fuzzy token fallback / typo tolerance
-                tok_scores = []
-                for tok in tokens:
-                    best_tok = 0.0
-                    for word in f"{desc_str} {b_str}".split():
-                        sim = fuzzy_similarity_ratio(tok, word)
-                        if sim > best_tok:
-                            best_tok = sim
-                    tok_scores.append(best_tok)
-                avg_tok = sum(tok_scores) / len(tok_scores) if tok_scores else 0.0
-                fuzzy_score = max(
-                    fuzzy_similarity_ratio(q_lower, desc_str),
-                    fuzzy_similarity_ratio(q_lower, b_str),
-                    avg_tok,
-                )
-                if fuzzy_score >= 0.55:
-                    score = max(score, fuzzy_score * 30.0)
+                # Note: fuzzy_score * 30.0 <= 30.0, so only compute Levenshtein when score < 30.0
+                if score < 30.0 and eval_tokens:
+                    words = f"{desc_norm} {b_norm}".split()
+                    words_set = set(words)
+                    tok_scores = []
+                    for tok in eval_tokens:
+                        if tok in words_set:
+                            tok_scores.append(1.0)
+                            continue
+                        best_tok = 0.0
+                        for word in words:
+                            sim = _fast_fuzzy_ratio(tok, word, max(0.45, best_tok))
+                            if sim > best_tok:
+                                best_tok = sim
+                        tok_scores.append(best_tok)
+                    avg_tok = sum(tok_scores) / len(tok_scores)
+                    fuzzy_score = max(
+                        _fast_fuzzy_ratio(q_norm, desc_norm, 0.55),
+                        _fast_fuzzy_ratio(q_norm, b_norm, 0.55),
+                        avg_tok,
+                    )
+                    if fuzzy_score >= 0.55:
+                        score = max(score, fuzzy_score * 30.0)
 
                 # 6. Brand and packaging quality boosts (only if the product matched the search query)
                 if score > 0:
-                    if b_str:
+                    if b_norm:
                         score += 5.0
-                    if re.search(r"\b(1\s*kg|500\s*g|1000\s*g)\b", desc_str):
+                    if std_pkg_re.search(desc_norm):
                         score += 5.0
 
                 # Penalize dirty or truncated items (e.g. "arroz para 1 u")
-                if re.search(r"\b(para\s+1\s*u)\b", desc_str):
+                if dirty_unit_re.search(desc_norm):
                     score -= 40.0
 
                 if score >= 3.5:
-                    scored.append((score, a.name or "", a))
+                    scored.append((score, art_name, art_id))
 
             scored.sort(key=lambda item: (-item[0], item[1]))
             total = len(scored)
             start = (page - 1) * per_page
-            return [a for _, _, a in scored[start : start + per_page]], total
+            page_slice = scored[start : start + per_page]
+            if not page_slice:
+                return [], total
+
+            page_ids = [art_id for _, _, art_id in page_slice]
+            loaded_articles = (
+                self._session.execute(base_stmt.where(Article.id.in_(page_ids)))
+                .scalars()
+                .unique()
+                .all()
+            )
+            articles_by_id = {a.id: a for a in loaded_articles}
+            return [
+                articles_by_id[art_id]
+                for _, _, art_id in page_slice
+                if art_id in articles_by_id
+            ], total
         except Exception as exc:
             logger.error(
                 "Error executing search_articles_paginated (query=%r, mode=%s, page=%s): %s",
@@ -533,15 +746,24 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
         return list(self._session.execute(stmt).scalars().all())
 
     def get_cities_for_region(self, region: str) -> List[str]:
-        # 1. Prefer cities in the region that have points of sale with recorded prices
-        if region:
+        valid_city_filters = (
+            PointOfSale.city.isnot(None),
+            PointOfSale.city != "",
+            or_(
+                PointOfSale.province.is_(None),
+                PointOfSale.city != PointOfSale.province,
+            ),
+        )
+        reg_clean = (region or "").strip().upper()
+
+        # 1. Prefer cities in the configured region that have stores with active prices
+        if reg_clean and reg_clean != "ALL":
             stmt_with_prices = (
                 select(PointOfSale.city)
                 .join(DailyPrice, DailyPrice.store_code == PointOfSale.code)
                 .where(
-                    func.upper(PointOfSale.province_code) == region.strip().upper(),
-                    PointOfSale.city.isnot(None),
-                    PointOfSale.city != "",
+                    func.upper(PointOfSale.province_code) == reg_clean,
+                    *valid_city_filters,
                 )
                 .distinct()
                 .order_by(PointOfSale.city)
@@ -552,14 +774,27 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             if cities:
                 return cities
 
-            # 2. Fallback to points of sale for that region
+        # 2. Fallback to any cities with active DailyPrice observations in this catalog DB
+        stmt_any_priced = (
+            select(PointOfSale.city)
+            .join(DailyPrice, DailyPrice.store_code == PointOfSale.code)
+            .where(*valid_city_filters)
+            .distinct()
+            .order_by(PointOfSale.city)
+        )
+        cities = [
+            c for c in self._session.execute(stmt_any_priced).scalars().all() if c
+        ]
+        if cities:
+            return cities
+
+        # 3. Fallback to unpriced points of sale in the configured region
+        if reg_clean and reg_clean != "ALL":
             stmt_pos = (
                 select(PointOfSale.city)
                 .where(
-                    func.upper(PointOfSale.province_code) == region.strip().upper(),
-                    PointOfSale.city.isnot(None),
-                    PointOfSale.city != "",
-                    PointOfSale.city != PointOfSale.province,
+                    func.upper(PointOfSale.province_code) == reg_clean,
+                    *valid_city_filters,
                 )
                 .distinct()
                 .order_by(PointOfSale.city)
@@ -568,10 +803,10 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             if cities:
                 return cities
 
-        # 3. Fallback: all distinct cities in points_of_sale
+        # 4. Final fallback: all distinct cities in points_of_sale
         stmt_all = (
             select(PointOfSale.city)
-            .where(PointOfSale.city.isnot(None), PointOfSale.city != "")
+            .where(*valid_city_filters)
             .distinct()
             .order_by(PointOfSale.city)
         )
@@ -871,9 +1106,8 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
 
     def get_active_city_prices(self) -> Dict[Tuple[str, str], List[int]]:
         """Groups active prices in daily_prices by (ean, city) for reference metrics calculation."""
-        stmt = (
-            select(DailyPrice.ean, PointOfSale.city, DailyPrice.price)
-            .join(PointOfSale, DailyPrice.store_code == PointOfSale.code)
+        stmt = select(DailyPrice.ean, PointOfSale.city, DailyPrice.price).join(
+            PointOfSale, DailyPrice.store_code == PointOfSale.code
         )
         city_prices: Dict[Tuple[str, str], List[int]] = defaultdict(list)
         for ean, city, price in self._session.execute(stmt).all():
@@ -1075,9 +1309,7 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         )
 
         display_date = (
-            max(dp.date for dp, _ in sorted_stores)
-            if sorted_stores
-            else target_date
+            max(dp.date for dp, _ in sorted_stores) if sorted_stores else target_date
         )
 
         return ArticlePriceStats(

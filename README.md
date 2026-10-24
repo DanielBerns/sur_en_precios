@@ -314,8 +314,11 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
 #### 2. On the UNPSJB Server (`~/Info/sur_en_precios/config.yaml`)
-Enable `sync_to_web` and set the target server and credentials:
+Set the target region (`AR-U` for Chubut), enable `sync_to_web`, and configure the target server and credentials:
 ```yaml
+app:
+  region: "AR-U"                                # Chubut (ISO 3166-2)
+
 sync:
   sync_to_web: true                             # Enable remote synchronization
   server_url: "https://<tu_usuario>.pythonanywhere.com"
@@ -325,8 +328,11 @@ sync:
 ```
 
 #### 3. On the PythonAnywhere Server (`~/Info/sur_en_precios/config.yaml`)
-On the receiving server, `sync_to_web` must be `false`:
+On the receiving server, set matching `app.region` (`AR-U`) and keep `sync_to_web` set to `false`:
 ```yaml
+app:
+  region: "AR-U"                                # Chubut (ISO 3166-2)
+
 sync:
   sync_to_web: false                            # Web host is receiver only
   api_token: "TU_TOKEN_SECRETO_GENERADO_DE_64_CARACTERES"

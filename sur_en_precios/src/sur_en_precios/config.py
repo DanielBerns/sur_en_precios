@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 class AppSettings(BaseModel):
     name: str = "Sur en Precios"
-    region: str = "AR-B"
+    region: str = "AR-U"
     debug: bool = False
 
 

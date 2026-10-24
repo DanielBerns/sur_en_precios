@@ -305,6 +305,97 @@ def test_search_articles_modes() -> None:
         assert len(res_fuzzy_desc) >= 1
         assert res_fuzzy_desc[0].ean == "779001"
 
+        # Stopword + accent-insensitive brand search ("la serenisima" -> "La Serenísima")
+        res_stopword_brand = cat_repo.search_articles("la serenisima", mode="fuzzy")
+        assert len(res_stopword_brand) >= 1
+        assert res_stopword_brand[0].ean == "779001"
+
+        res_exact_unaccent = cat_repo.search_articles("la serenisima", mode="exact")
+        assert len(res_exact_unaccent) == 1
+        assert res_exact_unaccent[0].ean == "779001"
+
+
+def test_get_cities_for_region_prioritizes_priced_cities() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    PublicBase.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        cat_repo = SqlAlchemyCatalogRepository(session)
+        price_repo = SqlAlchemyPriceRepository(session)
+
+        art = Article(ean="779001", name="Yerba Mate 1kg", brand_name="Playadito")
+        cat_repo.save_articles([art])
+
+        stores = [
+            PointOfSale(
+                code="(10-1-1)(carrefour)",
+                brand_name="Carrefour",
+                branch_name="25 De Mayo",
+                city="25 De Mayo",
+                province="Buenos Aires",
+                province_code="AR-B",
+            ),
+            PointOfSale(
+                code="(10-1-2)(carrefour)",
+                brand_name="Carrefour",
+                branch_name="Bahía",
+                city="Bahía Blanca",
+                province="Buenos Aires",
+                province_code="AR-B",
+            ),
+            PointOfSale(
+                code="9-2-101",
+                brand_name="La Anónima",
+                branch_name="Sucursal Centro",
+                city="Comodoro Rivadavia",
+                province="Chubut",
+                province_code="AR-U",
+            ),
+            PointOfSale(
+                code="9-2-102",
+                brand_name="La Anónima",
+                branch_name="Sucursal Trelew",
+                city="Trelew",
+                province="Chubut",
+                province_code="AR-U",
+            ),
+            PointOfSale(
+                code="9-2-999",
+                brand_name="Dirty Row",
+                branch_name="Provincia",
+                city="Chubut",
+                province="Chubut",
+                province_code="AR-U",
+            ),
+        ]
+        cat_repo.save_stores(stores)
+
+        today = date(2026, 10, 24)
+        price_repo.save_prices(
+            [
+                DailyPrice(date=today, ean="779001", store_code="9-2-101", price=3500),
+                DailyPrice(date=today, ean="779001", store_code="9-2-102", price=3600),
+            ]
+        )
+
+        # Matching region returns priced AR-U cities (excluding city == province)
+        assert cat_repo.get_cities_for_region("AR-U") == [
+            "Comodoro Rivadavia",
+            "Trelew",
+        ]
+
+        # Mismatched config region (e.g. stale AR-B on web host) still prioritizes priced AR-U cities over unpriced AR-B rows
+        assert cat_repo.get_cities_for_region("AR-B") == [
+            "Comodoro Rivadavia",
+            "Trelew",
+        ]
+
+        # Orphan store cleanup removes all 3 unpriced stores
+        pruned = cat_repo.delete_stores_without_prices()
+        assert pruned == 3
+        remaining_codes = set(session.scalars(select(PointOfSale.code)).all())
+        assert remaining_codes == {"9-2-101", "9-2-102"}
+
 
 def test_user_repository_basket_item_fields() -> None:
     engine = create_engine("sqlite:///:memory:")

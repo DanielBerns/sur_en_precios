@@ -21,7 +21,7 @@ def test_seed_master_catalog() -> None:
         assert counts["categories"] == 81
         assert counts["brands"] > 4000
         assert counts["articles"] > 50000
-        assert counts["points_of_sale"] > 4000
+        assert counts["points_of_sale"] == 0
 
         # Verify SQLite data directly
         with sqlite3.connect(str(target_db)) as con:

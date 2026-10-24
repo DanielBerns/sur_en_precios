@@ -11,6 +11,7 @@ def test_read_config_with_create_flag(tmp_path: Path) -> None:
 
     assert config.workdir == workdir
     assert config.get_app_name() == "Sur en Precios"
+    assert config.get_region() == "AR-U"
     assert (workdir / "config.yaml").exists()
     assert (workdir / "data").exists()
     assert (workdir / "logs").exists()

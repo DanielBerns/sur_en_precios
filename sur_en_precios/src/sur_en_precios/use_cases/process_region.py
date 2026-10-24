@@ -489,6 +489,14 @@ class ProcessAndPublishRegionUseCase:
                         process_date,
                     )
 
+                # 5b. Prune orphan or legacy seeded stores that have no active prices in the rolling window
+                pruned_stores = cat_repo.delete_stores_without_prices()
+                if pruned_stores > 0:
+                    self._logger.info(
+                        "Pruned %d orphan stores without active prices",
+                        pruned_stores,
+                    )
+
                 # 6. Recompute Reference Price Metrics across all active stores in the 7-day window
                 price_repo.delete_metrics_before_date(process_date)
                 active_city_prices = price_repo.get_active_city_prices()

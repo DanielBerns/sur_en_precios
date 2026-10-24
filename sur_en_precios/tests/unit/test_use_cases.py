@@ -66,3 +66,50 @@ def test_process_and_publish_region_use_case(tmp_path: Path) -> None:
 
         assert result.best_single_store is not None
         assert result.best_single_store.total_price == 1250
+
+
+def test_process_region_prunes_legacy_orphan_stores(tmp_path: Path) -> None:
+    from sur_en_precios.domain.models_public import PointOfSale
+
+    output_db = tmp_path / "data" / "public.sqlite"
+    output_db.parent.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{output_db}")
+    PublicBase.metadata.create_all(engine)
+
+    # Pre-populate DB with a legacy unpriced AR-B store (mimicking old hermes_clean.db seeding)
+    with Session(engine) as session:
+        session.add(
+            PointOfSale(
+                code="(10-1-292)(hipermercado carrefour)",
+                brand_name="Carrefour",
+                branch_name="25 De Mayo",
+                city="25 De Mayo",
+                province="Buenos Aires",
+                province_code="AR-B",
+            )
+        )
+        session.commit()
+
+    extracted_dir = tmp_path / "extracted_aru"
+    extracted_dir.mkdir()
+    (extracted_dir / "sucursales.csv").write_text(
+        "id_comercio|id_bandera|id_sucursal|sucursales_nombre|sucursales_localidad|sucursales_calle|sucursales_numero|sucursales_latitud|sucursales_longitud|sucursales_provincia\n"
+        "9|2|15|Sucursal Centro|Comodoro Rivadavia|San Martin|500|-45.86|-67.48|AR-U\n",
+        encoding="utf-8",
+    )
+    (extracted_dir / "productos.csv").write_text(
+        "id_comercio|id_bandera|id_sucursal|id_producto|productos_descripcion|productos_marca|productos_precio_lista\n"
+        "9|2|15|7790895000430|Gaseosa Cola 1.5L|Coca-Cola|2500.00\n",
+        encoding="utf-8",
+    )
+
+    use_case = ProcessAndPublishRegionUseCase(
+        target_region="AR-U", master_db_path=tmp_path / "nonexistent_hermes.db"
+    )
+    use_case.execute(extracted_dir, output_db, date(2026, 10, 24))
+
+    with Session(engine) as session:
+        cat_repo = SqlAlchemyCatalogRepository(session)
+        assert cat_repo.get_cities_for_region("AR-U") == ["Comodoro Rivadavia"]
+        assert cat_repo.get_cities_for_region("AR-B") == ["Comodoro Rivadavia"]
+        assert cat_repo.get_stores_by_city("25 De Mayo") == []

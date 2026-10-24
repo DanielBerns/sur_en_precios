@@ -458,3 +458,73 @@ def test_optimize_export_json_endpoints(tmp_path: Path):
     assert res_empty.status_code == 400
     assert "error" in json.loads(res_empty.get_data(as_text=True))
 
+
+def test_optimize_dropdown_displays_priced_chubut_cities(tmp_path: Path):
+    """Regression test: /optimize city selector shows priced AR-U cities instead of unpriced AR-B rows."""
+    workdir = tmp_path / "optimize_chubut_workdir"
+    workdir.mkdir()
+    # Simulate a legacy PythonAnywhere config.yaml that still had AR-B
+    (workdir / "config.yaml").write_text("app:\n  region: AR-B\n", encoding="utf-8")
+
+    app = create_public_app(workdir=workdir)
+    app.config["TESTING"] = True
+
+    config = app.config["APP_CONFIG"]
+    public_engine = create_engine(f"sqlite:///{config.get_public_db_path()}")
+    target_date = dt.date(2026, 10, 24)
+
+    with Session(public_engine) as pub_session:
+        unpriced_arb = PointOfSale(
+            code="(10-1-1)(carrefour)",
+            brand_name="Carrefour",
+            branch_name="25 De Mayo",
+            city="25 De Mayo",
+            province="Buenos Aires",
+            province_code="AR-B",
+        )
+        priced_comodoro = PointOfSale(
+            code="9-2-101",
+            brand_name="La Anónima",
+            branch_name="Centro",
+            city="Comodoro Rivadavia",
+            province="Chubut",
+            province_code="AR-U",
+        )
+        priced_trelew = PointOfSale(
+            code="9-2-102",
+            brand_name="Cooperativa Obrera",
+            branch_name="Trelew",
+            city="Trelew",
+            province="Chubut",
+            province_code="AR-U",
+        )
+        art = Article(
+            ean="7790895000430",
+            name="Gaseosa Coca-Cola 1.5L",
+            clean_description="Gaseosa Coca-Cola 1.5L",
+            brand_name="Coca-Cola",
+        )
+        dp1 = DailyPrice(
+            date=target_date,
+            ean="7790895000430",
+            store_code="9-2-101",
+            price=2500,
+        )
+        dp2 = DailyPrice(
+            date=target_date,
+            ean="7790895000430",
+            store_code="9-2-102",
+            price=2450,
+        )
+        pub_session.add_all(
+            [unpriced_arb, priced_comodoro, priced_trelew, art, dp1, dp2]
+        )
+        pub_session.commit()
+
+    client = app.test_client()
+    res = client.get("/optimize")
+    assert res.status_code == 200
+    html = res.get_data(as_text=True)
+    assert "Comodoro Rivadavia" in html
+    assert "Trelew" in html
+    assert "25 De Mayo" not in html

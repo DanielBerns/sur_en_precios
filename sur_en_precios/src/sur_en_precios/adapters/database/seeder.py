@@ -30,7 +30,10 @@ def seed_master_catalog(
       - tags (~29,576 facet keywords)
       - articles (~50,230 cleaned retail products)
       - article_tags (~59,014 tag associations)
-      - points_of_sale (~4,727 normalized store locations)
+
+    Note: points_of_sale are intentionally not copied from hermes_clean.db because
+    regional stores (with SEPA 'ic-ib-isuc' store codes) are populated directly
+    from the daily regional SEPA feeds during ETL.
 
     Returns a dict with the row count seeded per table.
     """
@@ -116,23 +119,6 @@ def seed_master_catalog(
             "SELECT count(*) FROM article_tags"
         ).fetchone()[0]
 
-        # 6. points_of_sale
-        cur.execute(
-            """
-            INSERT OR IGNORE INTO points_of_sale (
-                id, code, sepa_id, comercio_id, bandera_id, sucursal_id,
-                business_name, holding_group, brand_name, store_format,
-                branch_name, address, city, province, province_code,
-                latitude, longitude
-            )
-            SELECT
-                id, code, sepa_id, comercio_id, bandera_id, sucursal_id,
-                business_name, holding_group, brand_name, store_format,
-                branch_name, address, city, province, province_code,
-                latitude, longitude
-            FROM hermes.points_of_sale
-            """
-        )
         counts["points_of_sale"] = cur.execute(
             "SELECT count(*) FROM points_of_sale"
         ).fetchone()[0]
