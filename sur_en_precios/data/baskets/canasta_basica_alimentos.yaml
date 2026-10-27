@@ -1,0 +1,56 @@
+# Sur en Precios — Canasta de Compras
+version: "1.0"
+basket:
+  name: Canasta Básica de Alimentos (CBA)
+  uuid: 550e8400-e29b-41d4-a716-446655440001
+  is_public: true
+  created_at: '2026-10-27T00:00:00+00:00'
+  items:
+  - ean: '7790040400010'
+    quantity: 2
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Leche Entera 1L
+    brand: La Serenísima
+    category: Lácteos
+  - ean: '7790070411802'
+    quantity: 1
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Aceite de Girasol 900ml
+    brand: Cocinero
+    category: Almacén
+  - ean: '7790060000014'
+    quantity: 3
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Fideos Secos Guiseros 500g
+    brand: Matarazzo
+    category: Pastas Secas
+  - ean: '7790580120005'
+    quantity: 2
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Harina de Trigo 000 1kg
+    brand: Cañuelas
+    category: Harinas y Premezclas
+  - ean: '7790070411819'
+    quantity: 1
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Arroz Blanco Largo Fino 1kg
+    brand: Gallo
+    category: Arroz y Legumbres
+  - ean: '7791290000012'
+    quantity: 1
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Azúcar Blanco Común 1kg
+    brand: Ledesma
+    category: Azúcar y Edulcorantes

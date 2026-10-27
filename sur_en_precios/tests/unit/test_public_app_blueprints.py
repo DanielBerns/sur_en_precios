@@ -503,6 +503,20 @@ def test_optimize_dropdown_displays_priced_chubut_cities(tmp_path: Path):
             name="Gaseosa Coca-Cola 1.5L",
             clean_description="Gaseosa Coca-Cola 1.5L",
             brand_name="Coca-Cola",
+            package="1.5 L",
+            package_amount=1.5,
+            package_unit="L",
+            category_id=1,
+        )
+        cheaper_same_cat = Article(
+            ean="7790895000999",
+            name="Gaseosa Económica 1.5L",
+            clean_description="Gaseosa Económica 1.5L",
+            brand_name="Económica",
+            package="1.5 L",
+            package_amount=1.5,
+            package_unit="L",
+            category_id=1,
         )
         dp1 = DailyPrice(
             date=target_date,
@@ -516,8 +530,23 @@ def test_optimize_dropdown_displays_priced_chubut_cities(tmp_path: Path):
             store_code="9-2-102",
             price=2450,
         )
+        dp_cheaper = DailyPrice(
+            date=target_date,
+            ean="7790895000999",
+            store_code="9-2-101",
+            price=1200,
+        )
         pub_session.add_all(
-            [unpriced_arb, priced_comodoro, priced_trelew, art, dp1, dp2]
+            [
+                unpriced_arb,
+                priced_comodoro,
+                priced_trelew,
+                art,
+                cheaper_same_cat,
+                dp1,
+                dp2,
+                dp_cheaper,
+            ]
         )
         pub_session.commit()
 
@@ -528,3 +557,19 @@ def test_optimize_dropdown_displays_priced_chubut_cities(tmp_path: Path):
     assert "Comodoro Rivadavia" in html
     assert "Trelew" in html
     assert "25 De Mayo" not in html
+
+    # Full optimization calculation must not render "Sugerencias de Ahorro: Alternativas Equivalentes"
+    res_calc = client.get(
+        "/optimize?city=Comodoro+Rivadavia&date=2026-10-24&eans=7790895000430"
+    )
+    assert res_calc.status_code == 200
+    calc_html = res_calc.get_data(as_text=True)
+    assert "Sugerencias de Ahorro" not in calc_html
+    assert "Alternativas Equivalentes" not in calc_html
+
+    res_json = client.get(
+        "/optimize?city=Comodoro+Rivadavia&date=2026-10-24&eans=7790895000430&format=json"
+    )
+    assert res_json.status_code == 200
+    json_payload = json.loads(res_json.get_data(as_text=True))
+    assert "suggested_substitutions" not in json_payload

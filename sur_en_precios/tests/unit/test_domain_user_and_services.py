@@ -699,7 +699,7 @@ class TestBasketPriceReportService:
         )
         assert isinstance(json_output, str)
         import json
+
         parsed = json.loads(json_output)
         assert parsed["report_type"] == "basket_prices_report"
         assert parsed["summary"]["multi_store_optimal_total"] == 2400
-

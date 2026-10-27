@@ -1,0 +1,40 @@
+# Sur en Precios — Canasta de Compras
+version: "1.0"
+basket:
+  name: Canasta Básica de Limpieza e Higiene
+  uuid: 550e8400-e29b-41d4-a716-446655440002
+  is_public: true
+  created_at: '2026-10-27T00:00:00+00:00'
+  items:
+  - ean: '7791290001019'
+    quantity: 1
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Lavandina Común 1L
+    brand: Ayudín
+    category: Limpieza
+  - ean: '7791290001026'
+    quantity: 1
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Detergente Lavavajillas 500ml
+    brand: Magistral
+    category: Limpieza
+  - ean: '7791290001033'
+    quantity: 1
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Jabón de Tocador 3x90g
+    brand: Dove
+    category: Cuidado Personal
+  - ean: '7791290001040'
+    quantity: 1
+    selected: true
+    numerator: 1
+    denominator: 1
+    name: Papel Higiénico 4x30m
+    brand: Higienol
+    category: Cuidado Personal

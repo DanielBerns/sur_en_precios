@@ -28,25 +28,12 @@ class StoreBasketTotal:
 
 
 @dataclass
-class ItemSubstitution:
-    original_ean: str
-    product: ArticleCard
-    cheapest_store: Store
-    price: int
-    unit_price: Optional[float] = None
-    unit: Optional[str] = None
-    savings_amount: int = 0
-    savings_percent: float = 0.0
-
-
-@dataclass
 class ItemBestPrice:
     product: ArticleCard
     cheapest_store: Store
     price: int
     unit_price: Optional[float] = None
     unit: Optional[str] = None
-    substitution: Optional[ItemSubstitution] = None
     min_price: Optional[int] = None
     reference_price: Optional[int] = None
     max_price: Optional[int] = None
@@ -66,7 +53,6 @@ class BasketOptimizationResult:
     complete_stores: List[StoreBasketTotal]
     partial_stores: List[StoreBasketTotal]
     reference_prices: Dict[str, int]  # Dict of ean -> reference_price
-    suggested_substitutions: List[ItemSubstitution] = field(default_factory=list)
     multi_store_total_price: int = 0
 
 

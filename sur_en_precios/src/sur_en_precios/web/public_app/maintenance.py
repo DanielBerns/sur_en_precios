@@ -15,7 +15,9 @@ def get_maintenance_lock_path(config: Config) -> Path:
     return config.data_dir / "maintenance.lock"
 
 
-def set_maintenance_mode(config: Config, reason: str = "Catálogo en actualización") -> None:
+def set_maintenance_mode(
+    config: Config, reason: str = "Catálogo en actualización"
+) -> None:
     """Activates maintenance mode by writing a maintenance.lock file."""
     lock_path = get_maintenance_lock_path(config)
     lock_path.parent.mkdir(parents=True, exist_ok=True)

@@ -402,15 +402,12 @@ def export_basket_prices_json(basket_id: int):
                                 if art
                                 else f"Producto {item.ean}"
                             ),
-                            "brand": (
-                                getattr(art, "brand_name", "") if art else ""
-                            ),
+                            "brand": (getattr(art, "brand_name", "") if art else ""),
                         }
                     )
 
                 priced_eans = {
-                    opt.product.ean
-                    for opt in (result.item_by_item_optimal or [])
+                    opt.product.ean for opt in (result.item_by_item_optimal or [])
                 }
                 unpriced_items = [
                     p for p in requested_products if p["ean"] not in priced_eans
@@ -548,15 +545,12 @@ def export_public_basket_prices_json(uuid_str: str):
                                 if art
                                 else f"Producto {item.ean}"
                             ),
-                            "brand": (
-                                getattr(art, "brand_name", "") if art else ""
-                            ),
+                            "brand": (getattr(art, "brand_name", "") if art else ""),
                         }
                     )
 
                 priced_eans = {
-                    opt.product.ean
-                    for opt in (result.item_by_item_optimal or [])
+                    opt.product.ean for opt in (result.item_by_item_optimal or [])
                 }
                 unpriced_items = [
                     p for p in requested_products if p["ean"] not in priced_eans
@@ -579,7 +573,9 @@ def export_public_basket_prices_json(uuid_str: str):
                 )
     except Exception as exc:
         logger.error("Error exporting public basket prices JSON %s: %s", uuid_str, exc)
-        flash(_("Error al exportar el reporte de precios de la canasta pública."), "error")
+        flash(
+            _("Error al exportar el reporte de precios de la canasta pública."), "error"
+        )
         return redirect(url_for("baskets.baskets"))
 
 

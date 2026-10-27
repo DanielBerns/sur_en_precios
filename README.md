@@ -63,6 +63,7 @@ All persistent data and configuration are housed by default in `~/Info/sur_en_pr
 | Database | File | Purpose | Persistence Lifecycle |
 | :--- | :--- | :--- | :--- |
 | **Public Catalog** | `public_red.sqlite` / `public_green.sqlite` *(local build: `public.sqlite`)* | Stores regional stores, products, daily prices, and reference prices. | **Swapped atomically daily** via zero-downtime **Red / Green** slot rotation (`catalog_state.json`). |
+| **Price Evolution** | `evolution.sqlite` | Permanent historical time-series of basket min, reference, max, and store prices across regional cities. | **Permanent historical database**. Managed by Alembic; never wiped. Resides on UNPSJB server. |
 | **User Data** | `user_data.sqlite` | Stores user credentials, hashed passwords, shopping baskets, and saved items. | **Permanent**. Never touched or wiped during catalog updates. |
 | **Control / Audit** | `control.sqlite` | Records pipeline execution timings, download sizes, error traces, and audit logs. | **Permanent** append-only operational telemetry. |
 
@@ -221,9 +222,9 @@ flowchart LR
 
 ---
 
-### 🧩 The 4 Pipeline Phases of `run_daily_update`
+### 🧩 The 5 Pipeline Phases of `run_daily_update`
 
-When `sur_en_precios.tools.run_daily_update` runs, it executes four specialized phases sequentially:
+When `sur_en_precios.tools.run_daily_update` runs, it executes five specialized phases sequentially:
 
 1. **Harvest Phase (`run_harvest`)**:
    - Queries `datos.produccion.gob.ar/dataset/sepa-precios` for new compressed archives.
@@ -245,6 +246,15 @@ When `sur_en_precios.tools.run_daily_update` runs, it executes four specialized 
    - **Zero-Downtime Session Start (`POST /api/admin/sync/start`)**: Selects the inactive slot (`red` if `green` is active, or `green` if `red` is active) and reclaims any prior file in that inactive slot while the active slot continues serving live public traffic (`HTTP 200`, no `503` maintenance lock).
    - **Chunked Transfer (`PUT /api/admin/sync/chunk/<upload_id>/<idx>`)**: Streams compressed chunks (default 2 MB) with automatic retry/backoff into an isolated staging directory.
    - **Single-Pass Streaming Cutover (`POST /api/admin/sync/finish/<upload_id>`)**: Stream-decompresses chunks while unlinking each `.part` file on EOF (eliminating temporary archive peak overhead), verifies both compressed and uncompressed SHA-256 digests, runs lock-free read-only `PRAGMA integrity_check` (`mode=ro&immutable=1`), atomically renames the candidate into `public_<slot>.sqlite`, and atomically flips `catalog_state.json`. All uWSGI workers automatically rebind to the new slot on their next request without server reload.
+
+5. **Regional Basket Price Evolution (`run_basket_evolution`)**:
+   - Evaluates all benchmark shopping baskets downloaded from PythonAnywhere (or placed in `data/baskets/*.yaml`) against the freshly updated `public.sqlite`.
+   - Computes for every regional city:
+     - **Minimum Total** (multi-store optimal basket).
+     - **Reference Total** (geometric mean reference prices).
+     - **Maximum Total** (multi-store highest prices).
+     - **Best & Worst Single-Store Totals** (cheapest and most expensive single supermarkets carrying 100% of the basket).
+   - Records the evaluation into `evolution.sqlite` with idempotent upsert, preserving full time-series history for inflation and inter-city price gap analysis.
 
 ---
 
@@ -442,7 +452,8 @@ application = create_app()
 | Tool | Module Path | Purpose | Key Arguments |
 | :--- | :--- | :--- | :--- |
 | **Create Admin** | `sur_en_precios.tools.create_admin` | Bootstraps the unique server administrator. | `--username`, `--password`, `--workdir` |
-| **Daily Update** | `sur_en_precios.tools.run_daily_update` | Orchestrates daily harvest + regional ETL + logging + Red/Green sync. | `--workdir`, `--force` |
+| **Daily Update** | `sur_en_precios.tools.run_daily_update` | Orchestrates daily harvest + regional ETL + logging + Red/Green sync + basket evolution. | `--workdir`, `--force` |
+| **Basket Evolution** | `sur_en_precios.tools.run_basket_evolution` | Evaluates basket min/ref/max prices daily & analyzes inter-city price trends. | `--evaluate`, `--report`, `--list`, `--export`, `--basket`, `--city` |
 | **Sync Client** | `sur_en_precios.tools.sync_client` | Streams `public.sqlite` to the inactive Red/Green slot or triggers rollback. | `--workdir`, `--rollback` |
 | **Run Harvest** | `sur_en_precios.tools.run_harvest` | Scrapes remote SEPA web portal and downloads archives. | `--workdir`, `--force`, `--create` |
 | **Run ETL** | `sur_en_precios.tools.run_etl` | Processes raw CSV files into regional `public.sqlite`. | `--region`, `--date`, `--workdir`, `--create` |

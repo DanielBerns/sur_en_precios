@@ -1,7 +1,7 @@
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from sur_en_precios.adapters.database.repositories import (
@@ -29,8 +29,18 @@ def test_price_repo_window_pruning_and_deduplication() -> None:
         cat_repo = SqlAlchemyCatalogRepository(session)
 
         # Seed stores
-        s1 = PointOfSale(code="S1", brand_name="Super A", city="Comodoro Rivadavia", province="Chubut")
-        s2 = PointOfSale(code="S2", brand_name="Super B", city="Comodoro Rivadavia", province="Chubut")
+        s1 = PointOfSale(
+            code="S1",
+            brand_name="Super A",
+            city="Comodoro Rivadavia",
+            province="Chubut",
+        )
+        s2 = PointOfSale(
+            code="S2",
+            brand_name="Super B",
+            city="Comodoro Rivadavia",
+            province="Chubut",
+        )
         cat_repo.save_stores([s1, s2])
 
         # Seed articles
@@ -44,15 +54,23 @@ def test_price_repo_window_pruning_and_deduplication() -> None:
         # Day 3 (Oct 21 - today)
         prices = [
             # EAN 779001 at S1: Oct 10 (old), Oct 18 (intermediate), Oct 21 (latest)
-            DailyPrice(date=date(2026, 10, 10), ean="779001", store_code="S1", price=900),
-            DailyPrice(date=date(2026, 10, 18), ean="779001", store_code="S1", price=1000),
-            DailyPrice(date=date(2026, 10, 21), ean="779001", store_code="S1", price=1100),
-
+            DailyPrice(
+                date=date(2026, 10, 10), ean="779001", store_code="S1", price=900
+            ),
+            DailyPrice(
+                date=date(2026, 10, 18), ean="779001", store_code="S1", price=1000
+            ),
+            DailyPrice(
+                date=date(2026, 10, 21), ean="779001", store_code="S1", price=1100
+            ),
             # EAN 779001 at S2: only reported on Oct 19 (within 7 days, store S2 didn't report today)
-            DailyPrice(date=date(2026, 10, 19), ean="779001", store_code="S2", price=1050),
-
+            DailyPrice(
+                date=date(2026, 10, 19), ean="779001", store_code="S2", price=1050
+            ),
             # EAN 779002 at S1: only reported on Oct 10 (older than 7 days)
-            DailyPrice(date=date(2026, 10, 10), ean="779002", store_code="S1", price=800),
+            DailyPrice(
+                date=date(2026, 10, 10), ean="779002", store_code="S1", price=800
+            ),
         ]
         price_repo.save_prices(prices)
 
@@ -62,7 +80,11 @@ def test_price_repo_window_pruning_and_deduplication() -> None:
         assert purged == 2  # The two Oct 10 prices
 
         # Check remaining
-        remaining = session.execute(select(DailyPrice.date, DailyPrice.ean, DailyPrice.store_code, DailyPrice.price)).all()
+        remaining = session.execute(
+            select(
+                DailyPrice.date, DailyPrice.ean, DailyPrice.store_code, DailyPrice.price
+            )
+        ).all()
         assert len(remaining) == 3
 
         # 2. Deduplicate keeping latest
@@ -70,7 +92,11 @@ def test_price_repo_window_pruning_and_deduplication() -> None:
         deduped = price_repo.deduplicate_prices_keep_latest()
         assert deduped == 1
 
-        final_prices = session.execute(select(DailyPrice.date, DailyPrice.ean, DailyPrice.store_code, DailyPrice.price)).all()
+        final_prices = session.execute(
+            select(
+                DailyPrice.date, DailyPrice.ean, DailyPrice.store_code, DailyPrice.price
+            )
+        ).all()
         assert len(final_prices) == 2
 
         # Verify S1 has Oct 21 ($1100) and S2 has Oct 19 ($1050)
@@ -90,7 +116,9 @@ def test_price_repo_window_pruning_and_deduplication() -> None:
         assert store_prices_map["S2"] == 1050
 
         # 4. Test get_article_price_stats returns store observations from both stores
-        stats = price_repo.get_article_price_stats(ean="779001", city="Comodoro Rivadavia")
+        stats = price_repo.get_article_price_stats(
+            ean="779001", city="Comodoro Rivadavia"
+        )
         assert stats is not None
         assert stats.stores_count == 2
         assert stats.min_price == 1050
@@ -148,7 +176,9 @@ def test_process_region_multi_day_window_and_metrics(tmp_path: Path) -> None:
         cat_repo = SqlAlchemyCatalogRepository(session)
 
         # Total prices should still be 2 (s1 updated to $1200 on Oct 21, s2 preserved at $1100 from Oct 18)
-        all_dp = session.execute(select(DailyPrice.date, DailyPrice.store_code, DailyPrice.price)).all()
+        all_dp = session.execute(
+            select(DailyPrice.date, DailyPrice.store_code, DailyPrice.price)
+        ).all()
         assert len(all_dp) == 2
 
         prices_by_store = {row[1]: (row[0], row[2]) for row in all_dp}
@@ -163,11 +193,17 @@ def test_process_region_multi_day_window_and_metrics(tmp_path: Path) -> None:
         assert m.ean == "779123"
         assert m.min_price == 1100
         assert m.max_price == 1200
-        assert m.median_price == 1149  # Reference Price (Geometric Mean of 1100 and 1200: sqrt(1.32M) = 1149)
+        assert (
+            m.median_price == 1149
+        )  # Reference Price (Geometric Mean of 1100 and 1200: sqrt(1.32M) = 1149)
 
         # Basket optimization works with both stores available
         opt = OptimizeBasketUseCase(cat_repo, price_repo)
-        res = opt.execute("Comodoro Rivadavia", date(2026, 10, 21), [BasketItem(ean="779123", quantity=1)])
+        res = opt.execute(
+            "Comodoro Rivadavia",
+            date(2026, 10, 21),
+            [BasketItem(ean="779123", quantity=1)],
+        )
         assert res.best_single_store is not None
         assert res.best_single_store.store.code == "2-1-s2"
         assert res.best_single_store.total_price == 1100

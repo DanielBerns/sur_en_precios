@@ -119,12 +119,6 @@ class CatalogRepositoryPort(ABC):
         """Returns distinct cities within the given region code."""
         return []
 
-    def get_candidate_substitutions(
-        self, ean: str, limit: int = 5
-    ) -> List[ArticleCard]:
-        """Returns candidate articles in the same subcategory for substitution."""
-        return []
-
 
 class PriceRepositoryPort(ABC):
     """Port for daily prices and statistical metrics queries."""

@@ -244,4 +244,3 @@ def optimize():
 def export_optimize_json():
     """Exports optimize price report as a JSON file."""
     return optimize()
-

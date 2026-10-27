@@ -904,28 +904,6 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
         items, _ = self.get_articles_by_tag_paginated(tag_name, page=1, per_page=limit)
         return items
 
-    def get_candidate_substitutions(self, ean: str, limit: int = 5) -> List[Article]:
-        current = self.get_article_by_ean(ean)
-        if not current or not current.category_id:
-            return []
-
-        stmt = (
-            select(Article)
-            .where(
-                Article.category_id == current.category_id,
-                Article.ean != current.ean,
-            )
-            .options(
-                joinedload(Article.brand),
-                joinedload(Article.category),
-                selectinload(Article.tags),
-            )
-        )
-        if current.package_unit:
-            stmt = stmt.where(Article.package_unit == current.package_unit)
-        stmt = stmt.limit(limit)
-        return list(self._session.execute(stmt).scalars().unique().all())
-
 
 class SqlAlchemyPriceRepository(PriceRepositoryPort):
     """SQLAlchemy 2.0 repository implementation for prices and metrics."""

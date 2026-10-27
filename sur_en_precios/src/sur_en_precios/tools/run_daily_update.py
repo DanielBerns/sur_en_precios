@@ -65,7 +65,7 @@ def run_daily_update_sync(
 
     try:
         # Step 1: Harvest daily SEPA archives
-        print("\n[1/2] Iniciando recolección de archivos SEPA...")
+        print("\n[1/4] Iniciando recolección de archivos SEPA...")
         harvest_result = asyncio.run(
             run_harvest(
                 workdir_override=config.workdir,
@@ -86,7 +86,7 @@ def run_daily_update_sync(
             )
         else:
             # Step 2: Run Regional ETL to update public.sqlite
-            print("\n[2/3] Procesando datos regionales y actualizando catálogo...")
+            print("\n[2/4] Procesando datos regionales y actualizando catálogo...")
             run_etl_pipeline(
                 workdir_override=config.workdir,
                 should_create_override=False,
@@ -100,9 +100,36 @@ def run_daily_update_sync(
             and public_db.exists()
             and public_db.stat().st_size > 0
         ):
-            print("\n[3/3] Sincronizando catálogo con el servidor público...")
+            print("\n[3/4] Sincronizando catálogo con el servidor público...")
             sync_res = asyncio.run(sync_catalog_to_web(config))
             print(f"Sincronización remota finalizada: {sync_res.get('status')}")
+
+        # Step 4: Evaluate basket price evolution across regional cities
+        if (
+            config.get_evolution_settings().auto_evaluate_daily
+            and public_db.exists()
+            and public_db.stat().st_size > 0
+        ):
+            print("\n[4/4] Evaluando evolución de precios de canastas...")
+            try:
+                from sur_en_precios.tools.run_basket_evolution import (
+                    run_basket_evolution,
+                )
+
+                evo_res = run_basket_evolution(config)
+                print(
+                    f"Evolución registrada: {evo_res.baskets_evaluated} canastas evaluadas "
+                    f"en {evo_res.cities_count} ciudades ({evo_res.evaluations_count} observaciones)."
+                )
+            except Exception as evo_exc:
+                logger.warning(
+                    "Fallo no crítico en evaluación de evolución de canastas: %s",
+                    evo_exc,
+                )
+                print(
+                    f"[AVISO] No se pudo completar la evaluación de canastas: {evo_exc}",
+                    file=sys.stderr,
+                )
 
     except Exception as exc:
         status = "ERROR"

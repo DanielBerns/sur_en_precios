@@ -218,42 +218,6 @@
 </div>
 {% endif %}
 
-{% if result.suggested_substitutions %}
-<div class="card" style="border-left: 6px solid var(--warning);">
-    <h2>{{ _('Sugerencias de Ahorro: Alternativas Equivalentes') }}</h2>
-    <p>{{ _('Productos de la misma categoría a menor precio unitario o monto total:') }}</p>
-    <table>
-        <thead>
-            <tr>
-                <th>{{ _('Alternativa Sugerida') }}</th>
-                <th>{{ _('Comercio') }}</th>
-                <th>{{ _('Precio Alternativa') }}</th>
-                <th>{{ _('Ahorro Estimado') }}</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for sub in result.suggested_substitutions %}
-            <tr>
-                <td>
-                    <strong>{{ sub.product.name }}</strong>
-                    {% if sub.unit_price and sub.unit %}
-                    <br><small style="color: var(--muted);">${{ sub.unit_price }} / {{ sub.unit }}</small>
-                    {% endif %}
-                </td>
-                <td>{{ sub.cheapest_store.chain_name }} ({{ sub.cheapest_store.store_name }})</td>
-                <td><strong>{{ sub.price | format_currency }}</strong></td>
-                <td>
-                    <span class="badge badge-lowest">
-                        -{{ sub.savings_amount | format_currency }} ({{ sub.savings_percent }}%)
-                    </span>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% endif %}
-
 {% if result.complete_stores %}
 <div class="card">
     <h2>{{ _('Matriz de Precios por Comercio (Disponibilidad 100%%)') }}</h2>

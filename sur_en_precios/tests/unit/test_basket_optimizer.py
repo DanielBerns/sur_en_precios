@@ -104,11 +104,10 @@ def test_basket_optimizer_single_and_item_by_item() -> None:
     assert milk_opt.price == 100
 
 
-def test_basket_optimizer_unit_pricing_and_substitutions() -> None:
+def test_basket_optimizer_unit_pricing() -> None:
     calc_date = date(2026, 10, 9)
     city = "Bahía Blanca"
 
-    # Requested product: Premium Milk 1L, price $1000
     p1 = ArticleCard(
         article_number=ArticleNumber(ean="779100"),
         description=ArticleDescription(content="Leche Entera 1L"),
@@ -117,7 +116,6 @@ def test_basket_optimizer_unit_pricing_and_substitutions() -> None:
         package_unit="L",
         category_id=10,
     )
-    # Candidate substitute: Economy Milk 1L, price $750 (25% cheaper)
     p2 = ArticleCard(
         article_number=ArticleNumber(ean="779101"),
         description=ArticleDescription(content="Leche Entera Económica 1L"),
@@ -151,9 +149,11 @@ def test_basket_optimizer_unit_pricing_and_substitutions() -> None:
         ),
     ]
 
-    items = [BasketItem(ean="779100", quantity=2)]
+    items = [
+        BasketItem(ean="779100", quantity=2),
+        BasketItem(ean="779101", quantity=1),
+    ]
     ref_prices = {"779100": 1050, "779101": 780}
-    sub_map = {"779100": [p2]}
 
     result = BasketOptimizerService.optimize_basket(
         city=city,
@@ -163,30 +163,20 @@ def test_basket_optimizer_unit_pricing_and_substitutions() -> None:
         stores=stores,
         prices=prices,
         reference_prices=ref_prices,
-        substitute_candidates_map=sub_map,
     )
 
-    # Unit price verification:
-    # 779100 (1L at $1000) -> unit_price = 1000.0, unit = 'L'
-    assert len(result.item_by_item_optimal) == 1
-    opt = result.item_by_item_optimal[0]
-    assert opt.price == 1000
-    assert opt.unit_price == 1000.0
-    assert opt.unit == "L"
+    assert len(result.item_by_item_optimal) == 2
+    opt1 = next(o for o in result.item_by_item_optimal if o.product.ean == "779100")
+    assert opt1.price == 1000
+    assert opt1.unit_price == 1000.0
+    assert opt1.unit == "L"
+
+    opt2 = next(o for o in result.item_by_item_optimal if o.product.ean == "779101")
+    assert opt2.price == 750
+    assert opt2.unit_price == 750.0
+    assert opt2.unit == "L"
 
     # Store item price unit price verification
     store_p = result.complete_stores[0].item_prices["779100"]
     assert store_p.unit_price == 1000.0
     assert store_p.unit == "L"
-
-    # Substitution recommendation verification
-    assert opt.substitution is not None
-    sub = opt.substitution
-    assert sub.original_ean == "779100"
-    assert sub.product.ean == "779101"
-    assert sub.price == 750
-    assert sub.unit_price == 750.0
-    assert sub.unit == "L"
-    assert sub.savings_amount == 250
-    assert sub.savings_percent == 25.0
-    assert len(result.suggested_substitutions) == 1

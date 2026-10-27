@@ -19,6 +19,7 @@ class DatabaseSettings(BaseModel):
     public_db_filename: str = "public.sqlite"
     user_db_filename: str = "user_data.sqlite"
     control_db_filename: str = "control.sqlite"
+    evolution_db_filename: str = "evolution.sqlite"
 
 
 class ScraperSettings(BaseModel):
@@ -60,6 +61,11 @@ class SyncSettings(BaseModel):
     retain_previous_slot: bool = True
 
 
+class EvolutionSettings(BaseModel):
+    baskets_dir: str = "data/baskets"
+    auto_evaluate_daily: bool = True
+
+
 class AppConfig(BaseModel):
     app: AppSettings = Field(default_factory=AppSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
@@ -68,6 +74,7 @@ class AppConfig(BaseModel):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     log_analyzer: LogAnalyzerSettings = Field(default_factory=LogAnalyzerSettings)
     sync: SyncSettings = Field(default_factory=SyncSettings)
+    evolution: EvolutionSettings = Field(default_factory=EvolutionSettings)
 
 
 class Config:
@@ -124,6 +131,9 @@ class Config:
     def get_control_db_path(self) -> Path:
         return self.data_dir / self._settings.database.control_db_filename
 
+    def get_evolution_db_path(self) -> Path:
+        return self.data_dir / self._settings.database.evolution_db_filename
+
     def get_app_name(self) -> str:
         return self._settings.app.name
 
@@ -144,6 +154,15 @@ class Config:
 
     def get_sync_settings(self) -> SyncSettings:
         return self._settings.sync
+
+    def get_evolution_settings(self) -> EvolutionSettings:
+        return self._settings.evolution
+
+    @property
+    def baskets_dir(self) -> Path:
+        path = self._workdir / self._settings.evolution.baskets_dir
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     @property
     def sync_staging_dir(self) -> Path:
@@ -212,6 +231,7 @@ def read_config(
             _ = config_obj.data_dir
             _ = config_obj.raw_dir
             _ = config_obj.log_dir
+            _ = config_obj.baskets_dir
         return config_obj
     except ValidationError as err:
         raise ValueError(
