@@ -144,9 +144,6 @@ def main() -> None:
         description="Structured JSON Log Analyzer for Sur en Precios (filters configured in config.yaml)"
     )
     parser.add_argument("--workdir", help="Path to working directory")
-    parser.add_argument(
-        "--create", action="store_true", help="Create default config if missing"
-    )
 
     args = parser.parse_args()
 
@@ -155,7 +152,7 @@ def main() -> None:
     try:
         run_log_analyzer(
             workdir_override=workdir_path,
-            should_create_override=args.create,
+            should_create_override=False,
         )
     except Exception as exc:
         print(f"\n[ERROR] Log analyzer failed: {exc}\n", file=sys.stderr)

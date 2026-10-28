@@ -26,7 +26,7 @@ async def run_harvest(
         workdir_override or (Path.home() / "Info" / "sur_en_precios").resolve()
     )
     should_create = (
-        should_create_override if should_create_override is not None else True
+        should_create_override if should_create_override is not None else False
     )
     config = read_config(
         workdir_override=workdir_path, should_create_override=should_create
@@ -166,9 +166,6 @@ def main() -> None:
         description="Download and Harvest SEPA Dataset Archive (parameters configured in config.yaml)"
     )
     parser.add_argument("--workdir", help="Path to working directory")
-    parser.add_argument(
-        "--create", action="store_true", help="Create default config if missing"
-    )
 
     args = parser.parse_args()
 
@@ -178,7 +175,7 @@ def main() -> None:
         asyncio.run(
             run_harvest(
                 workdir_override=workdir_path,
-                should_create_override=args.create,
+                should_create_override=False,
             )
         )
     except Exception as exc:

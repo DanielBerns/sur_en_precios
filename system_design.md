@@ -92,7 +92,7 @@ The harvester processes daily `.zip` archives published by Argentina's Ministry 
 | **Project Layout** | `src/` layout | Canonical structure (`src/sur_en_precios/...`, `tests/`). |
 | **File System API** | **`pathlib.Path` ONLY** | 🚨 **`os.path` and `os.makedirs` are strictly BANNED.** |
 | **Database Access** | **SQLAlchemy 2.0+ ORM** | 🚨 **Direct SQL query strings are strictly BANNED.** Uses `Mapped[...]` and `mapped_column(...)` Declarative Base, and `Session.execute(select(...))` APIs. |
-| **Configuration** | **YAML + Pydantic** | Configured via `config.yaml` located in dynamically resolved `--workdir` / `WORKING_DIRECTORY` (fallback `~/Info/sur_en_precios/`). Includes `--create` flag generation. |
+| **Configuration** | **YAML + Pydantic** | Configured via `config.yaml` located in dynamically resolved `--workdir` / `WORKING_DIRECTORY` (fallback `~/Info/sur_en_precios/`). Initialized via `sur_en_precios.tools.start --workdir`. |
 | **HTTP Client** | Python **`aiohttp`** | 🚨 **`httpx` and `requests` are strictly BANNED.** |
 | **Currency & Prices** | **Integer Pesos Argentinos (ARS)** | Prices are rounded to integer Pesos Argentinos ($P = \text{round}(P)$). Trailing cents are omitted. |
 | **Codebase & UI Language** | English Code + **i18n (es_AR)** UI | All Python code (variables, functions, docstrings) in **English**. All UI templates in **Argentine Spanish (`es_AR`)** with **ZERO hardcoded text strings** (uses Flask-Babel). |
@@ -271,7 +271,7 @@ Configuration is resolved strictly according to Python standards (`config.md`):
 1. CLI `--workdir` path argument.
 2. `WORKING_DIRECTORY` environment variable.
 3. Fallback default: `~/Info/sur_en_precios`.
-4. CLI `--create` generates default `config.yaml`.
+4. `sur_en_precios.tools.start --workdir <path>` initializes `config.yaml`, directories, and databases.
 
 ```python
 from pathlib import Path

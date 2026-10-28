@@ -175,13 +175,10 @@ class Config:
         return self._settings
 
 
-def resolve_working_directory() -> tuple[Path, bool]:
+def resolve_working_directory() -> Path:
     """Resolves working directory via CLI --workdir, env var, or default ~/Info/sur_en_precios."""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--workdir", help="Path to working directory")
-    parser.add_argument(
-        "--create", action="store_true", help="Create default config if missing"
-    )
     args, _ = parser.parse_known_args()
 
     workdir_str = os.environ.get("WORKING_DIRECTORY")
@@ -193,7 +190,7 @@ def resolve_working_directory() -> tuple[Path, bool]:
     else:
         workdir_path = (Path.home() / "Info" / "sur_en_precios").resolve()
 
-    return workdir_path, bool(args.create)
+    return workdir_path
 
 
 def read_config(
@@ -202,11 +199,12 @@ def read_config(
     """Reads, parses, and validates config.yaml located in the working directory."""
     if workdir_override is not None:
         workdir_path = workdir_override
-        should_create = (
-            should_create_override if should_create_override is not None else False
-        )
     else:
-        workdir_path, should_create = resolve_working_directory()
+        workdir_path = resolve_working_directory()
+
+    should_create = (
+        should_create_override if should_create_override is not None else False
+    )
 
     config_path = workdir_path / "config.yaml"
 
@@ -218,7 +216,7 @@ def read_config(
                 yaml.dump(default_config.model_dump(), f, default_flow_style=False)
         else:
             raise FileNotFoundError(
-                f"Configuration file not found at {config_path}. Use --create flag to generate default."
+                f"Configuration file not found at {config_path}. Run 'sur_en_precios.tools.start --workdir {workdir_path}' to initialize."
             )
 
     with open(config_path, "r", encoding="utf-8") as f:

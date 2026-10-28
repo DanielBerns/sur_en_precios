@@ -139,12 +139,12 @@ The application resolves its working directory and configuration dynamically usi
 2. **Environment Variable**: `WORKING_DIRECTORY=/path/to/workdir`
 3. **Fallback Default**: `~/Info/sur_en_precios`
 
-### Generating Configuration (`config.yaml`)
+### Initializing Workdir and Configuration (`config.yaml`)
 
-Run any tool with the `--create` flag to generate the default `config.yaml` file inside the working directory:
+Run the `start` tool to generate the default `config.yaml`, set up required directories, and initialize the SQLite databases:
 
 ```bash
-uv run python -m sur_en_precios.tools.run_etl --create
+uv run python -m sur_en_precios.tools.start --workdir /path/to/workdir
 ```
 
 ### Configuration Schema (`config.yaml`)
@@ -451,12 +451,13 @@ application = create_app()
 
 | Tool | Module Path | Purpose | Key Arguments |
 | :--- | :--- | :--- | :--- |
+| **Start / Init** | `sur_en_precios.tools.start` | Initializes workdir, `config.yaml`, directories, and databases. | `--workdir` |
 | **Create Admin** | `sur_en_precios.tools.create_admin` | Bootstraps the unique server administrator. | `--username`, `--password`, `--workdir` |
 | **Daily Update** | `sur_en_precios.tools.run_daily_update` | Orchestrates daily harvest + regional ETL + logging + Red/Green sync + basket evolution. | `--workdir`, `--force` |
 | **Basket Evolution** | `sur_en_precios.tools.run_basket_evolution` | Evaluates basket min/ref/max prices daily & analyzes inter-city price trends. | `--evaluate`, `--report`, `--list`, `--export`, `--basket`, `--city` |
 | **Sync Client** | `sur_en_precios.tools.sync_client` | Streams `public.sqlite` to the inactive Red/Green slot or triggers rollback. | `--workdir`, `--rollback` |
-| **Run Harvest** | `sur_en_precios.tools.run_harvest` | Scrapes remote SEPA web portal and downloads archives. | `--workdir`, `--force`, `--create` |
-| **Run ETL** | `sur_en_precios.tools.run_etl` | Processes raw CSV files into regional `public.sqlite`. | `--region`, `--date`, `--workdir`, `--create` |
+| **Run Harvest** | `sur_en_precios.tools.run_harvest` | Scrapes remote SEPA web portal and downloads archives. | `--workdir`, `--force` |
+| **Run ETL** | `sur_en_precios.tools.run_etl` | Processes raw CSV files into regional `public.sqlite`. | `--region`, `--date`, `--workdir` |
 | **Log Analyzer** | `sur_en_precios.tools.log_analyzer` | Queries and filters structured JSON execution logs. | `--summary`, `--level`, `--search`, `--tail` |
 
 ---

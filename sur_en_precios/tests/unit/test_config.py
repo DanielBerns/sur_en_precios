@@ -19,5 +19,6 @@ def test_read_config_with_create_flag(tmp_path: Path) -> None:
 
 def test_read_config_missing_raises_error(tmp_path: Path) -> None:
     workdir = tmp_path / "missing_app"
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(FileNotFoundError) as exc_info:
         read_config(workdir_override=workdir, should_create_override=False)
+    assert "sur_en_precios.tools.start" in str(exc_info.value)

@@ -32,7 +32,7 @@ Establish the framework-agnostic domain models, business logic calculators, conf
 #### [NEW] [config.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/src/sur_en_precios/config.py)
 - Implement `AppConfig` Pydantic schema (`AppSettings`, `DatabaseSettings`, `ScraperSettings`, `LoggingSettings`).
 - Implement `resolve_working_directory()` checking CLI `--workdir`, `WORKING_DIRECTORY` env var, and default `~/Info/sur_en_precios/`.
-- Implement `read_config()` with `--create` flag support to generate `config.yaml` automatically.
+- Implement `read_config()` and `sur_en_precios.tools.start` tool to initialize `config.yaml`, directories, and databases.
 
 #### [NEW] [domain/models.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/src/sur_en_precios/domain/models.py)
 - Pure Python dataclasses for `Product`, `Store`, `Price`, `ShoppingList`, `ListItem`, `BasketOptimizationResult`, and `DailyMetrics`.
@@ -108,7 +108,7 @@ Construct light Flask applications with HTML5 + Vanilla JS/CSS and Flask-Babel `
 Build comprehensive Pytest unit and integration tests.
 
 #### [NEW] [tests/unit/test_config.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/tests/unit/test_config.py)
-- Tests CLI `--workdir`, environment variable precedence, and `--create` YAML file generation.
+- Tests CLI `--workdir`, environment variable precedence, and `sur_en_precios.tools.start` initialization.
 
 #### [NEW] [tests/unit/test_basket_optimizer.py](file:///home/dberns/Downloads/AI-course-main/sur_en_precios/tests/unit/test_basket_optimizer.py)
 - Unit tests for single store optimal basket cost, item-by-item optimal allocation, geometric mean threshold calculations, and partial match handling.

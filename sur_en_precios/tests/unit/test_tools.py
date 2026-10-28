@@ -159,18 +159,130 @@ def test_cli_parsers_strictly_restrict_arguments(
     from sur_en_precios.tools.log_analyzer import main as log_main
     from sur_en_precios.tools.run_etl import main as etl_main
     from sur_en_precios.tools.run_harvest import main as harvest_main
+    from sur_en_precios.tools.start import main as start_main
 
     # Test unknown arguments raise SystemExit in argparse
     for tool_main, bad_arg in [
         (etl_main, "--region"),
         (etl_main, "--date"),
+        (etl_main, "--create"),
         (harvest_main, "--url"),
         (harvest_main, "--file"),
+        (harvest_main, "--create"),
         (log_main, "--limit"),
         (log_main, "--level"),
+        (log_main, "--create"),
+        (start_main, "--create"),
+        (start_main, "--unknown"),
     ]:
-        monkeypatch.setattr("sys.argv", ["prog", bad_arg, "val"])
+        monkeypatch.setattr("sys.argv", ["prog", bad_arg])
         with pytest.raises(SystemExit) as exc_info:
             tool_main()
         # Argparse exits with status 2 on unrecognized arguments
         assert exc_info.value.code == 2
+
+
+def test_start_tool_initializes_workdir_directories_and_databases(
+    tmp_path: Path,
+) -> None:
+    from sqlalchemy import create_engine, inspect
+
+    from sur_en_precios.tools.start import init_workdir
+
+    workdir = tmp_path / "custom_workdir"
+    assert not workdir.exists()
+
+    config = init_workdir(workdir=workdir)
+
+    # 1. Config file created and matches workdir
+    assert config.workdir == workdir
+    config_file = workdir / "config.yaml"
+    assert config_file.exists()
+
+    # 2. Directories created
+    assert config.data_dir.exists()
+    assert config.raw_dir.exists()
+    assert config.temp_dir.exists()
+    assert config.log_dir.exists()
+    assert config.baskets_dir.exists()
+    assert config.sync_staging_dir.exists()
+
+    # 3. Databases created and tables present
+    # 3.1 Public DB
+    public_db = config.get_public_db_path()
+    assert public_db.exists()
+    pub_engine = create_engine(f"sqlite:///{public_db}")
+    pub_tables = set(inspect(pub_engine).get_table_names())
+    pub_engine.dispose()
+    assert {
+        "categories",
+        "brands",
+        "tags",
+        "articles",
+        "points_of_sale",
+        "daily_prices",
+        "daily_product_metrics",
+        "unreviewed_articles",
+    }.issubset(pub_tables)
+
+    # 3.2 User Data DB
+    user_db = config.get_user_db_path()
+    assert user_db.exists()
+    user_engine = create_engine(f"sqlite:///{user_db}")
+    user_tables = set(inspect(user_engine).get_table_names())
+    user_engine.dispose()
+    assert {"users", "baskets", "basket_items"}.issubset(user_tables)
+
+    # 3.3 Control DB
+    control_db = config.get_control_db_path()
+    assert control_db.exists()
+    ctrl_engine = create_engine(f"sqlite:///{control_db}")
+    ctrl_tables = set(inspect(ctrl_engine).get_table_names())
+    ctrl_engine.dispose()
+    assert "scraper_logs" in ctrl_tables
+
+    # 3.4 Evolution DB
+    evolution_db = config.get_evolution_db_path()
+    assert evolution_db.exists()
+    evo_engine = create_engine(f"sqlite:///{evolution_db}")
+    evo_tables = set(inspect(evo_engine).get_table_names())
+    evo_engine.dispose()
+    assert {
+        "evolution_baskets",
+        "evolution_runs",
+        "evolution_daily_summaries",
+        "evolution_daily_items",
+        "alembic_version",
+    }.issubset(evo_tables)
+
+
+def test_start_tool_idempotency(tmp_path: Path) -> None:
+    from sur_en_precios.tools.start import init_workdir
+
+    workdir = tmp_path / "idempotent_workdir"
+    cfg1 = init_workdir(workdir=workdir)
+    assert cfg1.workdir == workdir
+
+    # Second execution must be completely safe and non-destructive
+    cfg2 = init_workdir(workdir=workdir)
+    assert cfg2.workdir == workdir
+
+
+def test_start_tool_cli_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    from sur_en_precios.tools.start import main as start_main
+
+    workdir = tmp_path / "cli_workdir"
+    monkeypatch.setattr("sys.argv", ["prog", "--workdir", str(workdir)])
+
+    start_main()
+
+    captured = capsys.readouterr()
+    assert "SUR EN PRECIOS — WORKDIR INITIALIZED" in captured.out
+    assert "Workdir initialization completed successfully." in captured.out
+    assert (workdir / "config.yaml").exists()
+    assert (workdir / "data" / "public.sqlite").exists()
+    assert (workdir / "data" / "user_data.sqlite").exists()
+    assert (workdir / "data" / "control.sqlite").exists()
+    assert (workdir / "data" / "evolution.sqlite").exists()
