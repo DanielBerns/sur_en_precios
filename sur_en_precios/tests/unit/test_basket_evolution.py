@@ -11,6 +11,7 @@ from sur_en_precios.domain.evolution import (
     EvolutionSummaryRecord,
     StorePriceObservation,
     build_trend,
+    calculate_inflation_drivers,
     compare_cities,
     geometric_mean,
     pct_change,
@@ -281,3 +282,82 @@ def test_rank_best_stores_analytics() -> None:
     assert rankings[0].days_best == 2
     assert rankings[0].days_evaluated == 3
     assert rankings[0].share_pct == 66.7
+
+
+def test_calculate_inflation_drivers() -> None:
+    initial_items = [
+        {
+            "ean": "779001",
+            "product_name": "Aceite Girasol 1L",
+            "quantity": 1,
+            "numerator": 1,
+            "denominator": 1,
+            "reference_price": 1000,
+            "min_price": 950,
+            "max_price": 1100,
+            "cheapest_store_code": "s1",
+        },
+        {
+            "ean": "779002",
+            "product_name": "Arroz 1kg",
+            "quantity": 2,
+            "numerator": 1,
+            "denominator": 2,  # effective quantity = 1kg
+            "reference_price": 500,
+            "min_price": 480,
+            "max_price": 520,
+            "cheapest_store_code": "s2",
+        },
+    ]
+
+    latest_items = [
+        {
+            "ean": "779001",
+            "product_name": "Aceite Girasol 1L",
+            "quantity": 1,
+            "numerator": 1,
+            "denominator": 1,
+            "reference_price": 1200,  # +200 ARS (+20%)
+            "min_price": 1100,
+            "max_price": 1320,
+            "cheapest_store_code": "s1",
+        },
+        {
+            "ean": "779002",
+            "product_name": "Arroz 1kg",
+            "quantity": 2,
+            "numerator": 1,
+            "denominator": 2,
+            "reference_price": 500,  # no change
+            "min_price": 480,
+            "max_price": 540,
+            "cheapest_store_code": "s2",
+        },
+    ]
+
+    # Initial basket total = 1000 + 500 = 1500
+    # Latest basket total = 1200 + 500 = 1700
+    drivers = calculate_inflation_drivers(
+        initial_items=initial_items,
+        latest_items=latest_items,
+        initial_basket_total=1500,
+        latest_basket_total=1700,
+    )
+
+    assert len(drivers) == 2
+    # Highest driver first
+    d1 = drivers[0]
+    assert d1.ean == "779001"
+    assert d1.initial_price == 1000
+    assert d1.latest_price == 1200
+    assert d1.cost_change == 200
+    assert d1.change_pct == 20.0
+    assert d1.contribution_pct == 13.33  # 200 / 1500 * 100 = 13.33%
+    assert d1.weight_pct == 70.59  # 1200 / 1700 * 100 = 70.59%
+    assert d1.latest_dispersion_pct == 20.0  # (1320 - 1100) / 1100 * 100 = 20.0%
+
+    d2 = drivers[1]
+    assert d2.ean == "779002"
+    assert d2.cost_change == 0
+    assert d2.change_pct == 0.0
+    assert d2.contribution_pct == 0.0

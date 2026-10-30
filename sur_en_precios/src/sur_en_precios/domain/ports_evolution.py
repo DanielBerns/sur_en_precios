@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import date
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from datetime import date, datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 from sur_en_precios.domain.evolution import (
     CityBasketEvaluation,
+    CityComparisonRow,
     EvolutionBasketSpec,
     EvolutionSummaryRecord,
+    ItemInflationDriver,
+    StoreRankingRow,
+    TrendRow,
 )
 
-__all__ = ["EvolutionRepositoryPort", "TrackedBasketInfo"]
+__all__ = [
+    "EvolutionReportData",
+    "EvolutionReportRendererPort",
+    "EvolutionRepositoryPort",
+    "TrackedBasketInfo",
+]
 
 
 class TrackedBasketInfo:
@@ -104,7 +115,37 @@ class EvolutionRepositoryPort(ABC):
     def get_item_rows(
         self,
         basket_key: Optional[str] = None,
+        city: Optional[str] = None,
         since: Optional[date] = None,
         until: Optional[date] = None,
     ) -> List[Dict[str, object]]:
-        """Flat item-level rows (one per date/basket/city/EAN) for export."""
+        """Flat item-level rows (one per date/basket/city/EAN) for export and analysis."""
+
+
+@dataclass(frozen=True)
+class EvolutionReportData:
+    """Consolidated read-only data payload for rendering basket evolution reports."""
+
+    generated_at: datetime
+    baskets: List[TrackedBasketInfo]
+    cities: List[str]
+    date_range: Tuple[Optional[date], Optional[date]]
+    summaries: List[EvolutionSummaryRecord]
+    trends: Dict[str, Dict[str, List[TrendRow]]]  # basket_key -> city -> List[TrendRow]
+    city_comparisons: Dict[
+        str, Tuple[Optional[int], List[CityComparisonRow]]
+    ]  # basket_key -> (regional_ref, comparisons)
+    store_rankings: Dict[
+        str, List[StoreRankingRow]
+    ]  # basket_key -> List[StoreRankingRow]
+    inflation_drivers: Dict[
+        str, Dict[str, List[ItemInflationDriver]]
+    ]  # basket_key -> city -> List[ItemInflationDriver]
+
+
+class EvolutionReportRendererPort(ABC):
+    """Driven port for rendering basket evolution reports to persistent artifacts."""
+
+    @abstractmethod
+    def render(self, data: EvolutionReportData, output_path: Path) -> Path:
+        """Renders report data to the specified output path and returns the resolved path."""

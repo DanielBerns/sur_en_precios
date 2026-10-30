@@ -283,10 +283,11 @@ class SqlAlchemyEvolutionRepository(EvolutionRepositoryPort):
     def get_item_rows(
         self,
         basket_key: Optional[str] = None,
+        city: Optional[str] = None,
         since: Optional[date] = None,
         until: Optional[date] = None,
     ) -> List[dict[str, object]]:
-        """Flat item-level rows for CSV/JSON export."""
+        """Flat item-level rows for CSV/JSON export and analysis."""
         stmt = (
             select(BasketCityItemModel, BasketCitySummaryModel, TrackedBasketModel)
             .join(
@@ -300,6 +301,10 @@ class SqlAlchemyEvolutionRepository(EvolutionRepositoryPort):
         )
         if basket_key:
             stmt = stmt.where(TrackedBasketModel.basket_key == basket_key)
+        if city:
+            stmt = stmt.where(
+                func.lower(BasketCitySummaryModel.city) == city.strip().lower()
+            )
         if since:
             stmt = stmt.where(BasketCitySummaryModel.price_date >= since)
         if until:

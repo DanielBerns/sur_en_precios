@@ -136,9 +136,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    workdir_path = (
-        Path(args.workdir).expanduser().resolve() if args.workdir else None
-    )
+    workdir_path = Path(args.workdir).expanduser().resolve() if args.workdir else None
 
     try:
         init_workdir(workdir=workdir_path)

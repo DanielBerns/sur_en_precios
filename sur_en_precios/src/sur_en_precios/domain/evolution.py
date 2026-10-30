@@ -34,14 +34,16 @@ __all__ = [
     "EvolutionBasketSpec",
     "EvolutionSummaryRecord",
     "ItemEvaluation",
+    "ItemInflationDriver",
     "StoreRankingRow",
     "StorePriceObservation",
     "TrendRow",
+    "build_trend",
+    "calculate_inflation_drivers",
     "compare_cities",
     "geometric_mean",
     "pct_change",
     "rank_best_stores",
-    "build_trend",
 ]
 
 
@@ -471,3 +473,182 @@ def rank_best_stores(
     ]
     rows.sort(key=lambda r: (r.city, -r.days_best, r.store_label))
     return rows
+
+
+@dataclass(frozen=True)
+class ItemInflationDriver:
+    """Decomposition of an individual basket item's price change and inflation impact."""
+
+    ean: str
+    product_name: str
+    quantity: int
+    numerator: int
+    denominator: int
+    initial_price: Optional[int]
+    latest_price: Optional[int]
+    initial_line_cost: Optional[int]
+    latest_line_cost: Optional[int]
+    cost_change: Optional[int]
+    change_pct: Optional[float]
+    weight_pct: Optional[float]
+    contribution_pct: Optional[float]
+    latest_dispersion_pct: Optional[float]
+    cheapest_store_code: Optional[str]
+
+
+def _parse_int(val: object, default: int = 1) -> int:
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        try:
+            return int(val)
+        except ValueError:
+            return default
+    return default
+
+
+def calculate_inflation_drivers(
+    initial_items: Sequence[Dict[str, object]],
+    latest_items: Sequence[Dict[str, object]],
+    initial_basket_total: Optional[int] = None,
+    latest_basket_total: Optional[int] = None,
+) -> List[ItemInflationDriver]:
+    """Calculates each item's price variation and percentage contribution to overall basket change.
+
+    Drivers are sorted descending by cost increase (highest inflation driver first).
+    """
+    init_map: Dict[str, Dict[str, object]] = {
+        str(it["ean"]): dict(it) for it in initial_items if "ean" in it
+    }
+    latest_map: Dict[str, Dict[str, object]] = {
+        str(it["ean"]): dict(it) for it in latest_items if "ean" in it
+    }
+
+    all_eans = sorted(set(init_map.keys()) | set(latest_map.keys()))
+    drivers: List[ItemInflationDriver] = []
+
+    computed_init_total = initial_basket_total
+    if computed_init_total is None:
+        init_costs: List[int] = []
+        for it in init_map.values():
+            ref = it.get("reference_price")
+            q = _parse_int(it.get("quantity"), 1)
+            num = _parse_int(it.get("numerator"), 1)
+            den = _parse_int(it.get("denominator"), 1)
+            if isinstance(ref, (int, float)) and ref > 0 and den > 0:
+                init_costs.append(round(int(ref) * q * num / den))
+        computed_init_total = sum(init_costs) if init_costs else None
+
+    computed_latest_total = latest_basket_total
+    if computed_latest_total is None:
+        latest_costs: List[int] = []
+        for it in latest_map.values():
+            ref = it.get("reference_price")
+            q = _parse_int(it.get("quantity"), 1)
+            num = _parse_int(it.get("numerator"), 1)
+            den = _parse_int(it.get("denominator"), 1)
+            if isinstance(ref, (int, float)) and ref > 0 and den > 0:
+                latest_costs.append(round(int(ref) * q * num / den))
+        computed_latest_total = sum(latest_costs) if latest_costs else None
+
+    for ean in all_eans:
+        init_row = init_map.get(ean, {})
+        latest_row = latest_map.get(ean, {})
+
+        name = str(
+            latest_row.get("product_name")
+            or init_row.get("product_name")
+            or f"Item {ean}"
+        )
+        quantity = _parse_int(latest_row.get("quantity") or init_row.get("quantity"), 1)
+        numerator = _parse_int(
+            latest_row.get("numerator") or init_row.get("numerator"), 1
+        )
+        denominator = _parse_int(
+            latest_row.get("denominator") or init_row.get("denominator"), 1
+        )
+        if denominator <= 0:
+            denominator = 1
+
+        init_ref = init_row.get("reference_price")
+        init_price = int(init_ref) if isinstance(init_ref, (int, float)) else None
+
+        latest_ref = latest_row.get("reference_price")
+        latest_price = int(latest_ref) if isinstance(latest_ref, (int, float)) else None
+
+        init_line_cost = (
+            round(init_price * quantity * numerator / denominator)
+            if init_price is not None
+            else None
+        )
+        latest_line_cost = (
+            round(latest_price * quantity * numerator / denominator)
+            if latest_price is not None
+            else None
+        )
+
+        cost_change = (
+            latest_line_cost - init_line_cost
+            if (latest_line_cost is not None and init_line_cost is not None)
+            else None
+        )
+        change_pct_val = pct_change(latest_line_cost, init_line_cost)
+
+        weight_pct_val: Optional[float] = None
+        if (
+            latest_line_cost is not None
+            and computed_latest_total is not None
+            and computed_latest_total > 0
+        ):
+            weight_pct_val = round(100.0 * latest_line_cost / computed_latest_total, 2)
+
+        contribution_pct_val: Optional[float] = None
+        if (
+            cost_change is not None
+            and computed_init_total is not None
+            and computed_init_total > 0
+        ):
+            contribution_pct_val = round(100.0 * cost_change / computed_init_total, 2)
+
+        latest_max = latest_row.get("max_price")
+        latest_min = latest_row.get("min_price")
+        latest_dispersion = (
+            _spread_pct(int(latest_max), int(latest_min))
+            if (
+                isinstance(latest_max, (int, float))
+                and isinstance(latest_min, (int, float))
+            )
+            else None
+        )
+
+        cheapest_store = latest_row.get("cheapest_store_code")
+        cheapest_store_str = str(cheapest_store) if cheapest_store else None
+
+        drivers.append(
+            ItemInflationDriver(
+                ean=ean,
+                product_name=name,
+                quantity=quantity,
+                numerator=numerator,
+                denominator=denominator,
+                initial_price=init_price,
+                latest_price=latest_price,
+                initial_line_cost=init_line_cost,
+                latest_line_cost=latest_line_cost,
+                cost_change=cost_change,
+                change_pct=change_pct_val,
+                weight_pct=weight_pct_val,
+                contribution_pct=contribution_pct_val,
+                latest_dispersion_pct=latest_dispersion,
+                cheapest_store_code=cheapest_store_str,
+            )
+        )
+
+    # Sort primarily by cost change descending (None treated as lowest)
+    drivers.sort(
+        key=lambda d: (
+            -d.cost_change if d.cost_change is not None else float("inf"),
+            d.product_name,
+        )
+    )
+    return drivers

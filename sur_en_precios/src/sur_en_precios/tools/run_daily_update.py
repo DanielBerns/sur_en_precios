@@ -112,7 +112,10 @@ def run_daily_update_sync(
         ):
             print("\n[4/4] Evaluando evolución de precios de canastas...")
             try:
+                from datetime import date
+
                 from sur_en_precios.tools.run_basket_evolution import (
+                    generate_evolution_html_report,
                     run_basket_evolution,
                 )
 
@@ -121,6 +124,28 @@ def run_daily_update_sync(
                     f"Evolución registrada: {evo_res.baskets_evaluated} canastas evaluadas "
                     f"en {evo_res.cities_count} ciudades ({evo_res.evaluations_count} observaciones)."
                 )
+
+                if (
+                    config.get_evolution_settings().auto_generate_html_report
+                    and evo_res.is_success
+                ):
+                    date_str = (
+                        evo_res.price_date.isoformat()
+                        if evo_res.price_date
+                        else date.today().isoformat()
+                    )
+                    latest_html = config.evolution_reports_dir / "evolution_latest.html"
+                    archive_html = (
+                        config.evolution_reports_dir / f"evolution_{date_str}.html"
+                    )
+                    generate_evolution_html_report(
+                        config=config,
+                        output_path=latest_html,
+                        archive_path=archive_html,
+                    )
+                    print(
+                        f"Reporte HTML interactivo generado: {latest_html} y archivo {archive_html}"
+                    )
             except Exception as evo_exc:
                 logger.warning(
                     "Fallo no crítico en evaluación de evolución de canastas: %s",

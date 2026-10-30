@@ -8,9 +8,11 @@ from typing import Dict, List, Optional, Tuple
 
 from sur_en_precios.domain.evolution import (
     CityComparisonRow,
+    ItemInflationDriver,
     StoreRankingRow,
     TrendRow,
     build_trend,
+    calculate_inflation_drivers,
     compare_cities,
     rank_best_stores,
 )
@@ -118,13 +120,61 @@ class AnalyzeBasketEvolutionUseCase:
             )
         return rows
 
+    def get_inflation_drivers(
+        self,
+        basket_key: str,
+        city: Optional[str] = None,
+        since: Optional[date] = None,
+        until: Optional[date] = None,
+    ) -> List[ItemInflationDriver]:
+        """Calculates item-level inflation drivers between the earliest and latest date in range."""
+        summaries = self._evolution_repo.get_summaries(
+            basket_key=basket_key, city=city, since=since, until=until
+        )
+        if not summaries:
+            return []
+
+        target_city = city or summaries[0].city
+        city_summaries = [
+            s
+            for s in summaries
+            if s.city.strip().lower() == target_city.strip().lower()
+        ]
+        if not city_summaries:
+            return []
+
+        city_summaries.sort(key=lambda s: s.price_date)
+        first_summary = city_summaries[0]
+        latest_summary = city_summaries[-1]
+
+        first_items = self._evolution_repo.get_item_rows(
+            basket_key=basket_key,
+            city=target_city,
+            since=first_summary.price_date,
+            until=first_summary.price_date,
+        )
+        latest_items = self._evolution_repo.get_item_rows(
+            basket_key=basket_key,
+            city=target_city,
+            since=latest_summary.price_date,
+            until=latest_summary.price_date,
+        )
+
+        return calculate_inflation_drivers(
+            initial_items=first_items,
+            latest_items=latest_items,
+            initial_basket_total=first_summary.total_reference_price,
+            latest_basket_total=latest_summary.total_reference_price,
+        )
+
     def export_items(
         self,
         basket_key: Optional[str] = None,
+        city: Optional[str] = None,
         since: Optional[date] = None,
         until: Optional[date] = None,
     ) -> List[Dict[str, object]]:
         """Returns flat dictionaries of item-level price observations."""
         return self._evolution_repo.get_item_rows(
-            basket_key=basket_key, since=since, until=until
+            basket_key=basket_key, city=city, since=since, until=until
         )

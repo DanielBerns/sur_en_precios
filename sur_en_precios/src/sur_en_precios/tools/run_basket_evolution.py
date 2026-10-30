@@ -31,6 +31,9 @@ from sur_en_precios.adapters.database.repositories_evolution import (
     SqlAlchemyEvolutionRepository,
 )
 from sur_en_precios.adapters.logging import setup_application_logging
+from sur_en_precios.adapters.reports.html_evolution_report import (
+    HtmlBasketEvolutionReportRenderer,
+)
 from sur_en_precios.config import Config, read_config
 from sur_en_precios.use_cases.analyze_basket_evolution import (
     AnalyzeBasketEvolutionUseCase,
@@ -39,10 +42,13 @@ from sur_en_precios.use_cases.evaluate_basket_evolution import (
     EvaluateBasketEvolutionUseCase,
     EvolutionExecutionResult,
 )
+from sur_en_precios.use_cases.generate_basket_evolution_report import (
+    GenerateBasketEvolutionReportUseCase,
+)
 
 logger = logging.getLogger("sur_en_precios.evolution")
 
-__all__ = ["main", "run_basket_evolution"]
+__all__ = ["generate_evolution_html_report", "main", "run_basket_evolution"]
 
 
 def run_basket_evolution(
@@ -93,6 +99,47 @@ def run_basket_evolution(
             target_date=target_date,
             cities=cities,
             baskets_dir=baskets_dir,
+        )
+
+
+def generate_evolution_html_report(
+    config: Config,
+    output_path: Optional[Path] = None,
+    basket_key: Optional[str] = None,
+    since: Optional[date] = None,
+    until: Optional[date] = None,
+    archive_path: Optional[Path] = None,
+) -> Path:
+    """Generates the standalone interactive HTML report for basket price evolution.
+
+    Queries evolution.sqlite in read-only mode and writes the compiled self-contained
+    HTML dashboard to the target location.
+    """
+    evolution_db_path = config.get_evolution_db_path()
+    if not evolution_db_path.exists():
+        raise FileNotFoundError(
+            f"La base de datos de evolución '{evolution_db_path}' no existe. "
+            "Ejecute primero con '--evaluate' para registrar datos."
+        )
+
+    target_path = output_path or (
+        config.evolution_reports_dir / "evolution_latest.html"
+    )
+    evo_engine = create_evolution_engine(evolution_db_path)
+
+    with Session(evo_engine) as session:
+        evo_repo = SqlAlchemyEvolutionRepository(session)
+        renderer = HtmlBasketEvolutionReportRenderer()
+        use_case = GenerateBasketEvolutionReportUseCase(
+            evolution_repo=evo_repo,
+            report_renderer=renderer,
+        )
+        return use_case.execute(
+            output_path=target_path,
+            basket_key=basket_key,
+            since=since,
+            until=until,
+            archive_path=archive_path,
         )
 
 
@@ -373,7 +420,18 @@ def main() -> None:
         choices=["csv", "json"],
         help="Exporta los datos de evolución a formato CSV o JSON",
     )
+    mode_group.add_argument(
+        "--html",
+        nargs="?",
+        const="",
+        help="Genera un reporte interactivo HTML autónomo (opcionalmente especificar ruta destino)",
+    )
 
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Abre automáticamente el reporte HTML generado en el navegador web local",
+    )
     parser.add_argument(
         "--date", help="Fecha específica a evaluar o consultar (YYYY-MM-DD)"
     )
@@ -413,10 +471,40 @@ def main() -> None:
     )
 
     # Default action: if no specific mode is given, default to --evaluate
-    if not (args.evaluate or args.report or args.list or args.export):
+    if not (
+        args.evaluate
+        or args.report
+        or args.list
+        or args.export
+        or args.html is not None
+    ):
         args.evaluate = True
 
-    if args.evaluate:
+    if args.html is not None:
+        try:
+            target_out = (
+                Path(args.html).expanduser().resolve()
+                if args.html
+                else (config.evolution_reports_dir / "evolution_latest.html")
+            )
+            generated_file = generate_evolution_html_report(
+                config=config,
+                output_path=target_out,
+                basket_key=args.basket,
+                since=parsed_since,
+                until=parsed_until,
+            )
+            print(f"Reporte HTML interactivo generado en: {generated_file}")
+            if args.open:
+                import webbrowser
+
+                webbrowser.open(generated_file.as_uri())
+        except Exception as exc:
+            logger.exception("Error al generar el reporte HTML: %s", exc)
+            print(f"\n[ERROR] Fallo al generar reporte HTML: {exc}\n", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.evaluate:
         try:
             result = run_basket_evolution(
                 config=config,

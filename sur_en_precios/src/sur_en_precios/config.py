@@ -63,7 +63,9 @@ class SyncSettings(BaseModel):
 
 class EvolutionSettings(BaseModel):
     baskets_dir: str = "data/baskets"
+    reports_dir: str = "reports"
     auto_evaluate_daily: bool = True
+    auto_generate_html_report: bool = True
 
 
 class AppConfig(BaseModel):
@@ -165,6 +167,12 @@ class Config:
         return path
 
     @property
+    def evolution_reports_dir(self) -> Path:
+        path = self._workdir / self._settings.evolution.reports_dir
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
     def sync_staging_dir(self) -> Path:
         path = self._workdir / self._settings.sync.staging_dir
         path.mkdir(parents=True, exist_ok=True)
@@ -230,6 +238,7 @@ def read_config(
             _ = config_obj.raw_dir
             _ = config_obj.log_dir
             _ = config_obj.baskets_dir
+            _ = config_obj.evolution_reports_dir
         return config_obj
     except ValidationError as err:
         raise ValueError(
