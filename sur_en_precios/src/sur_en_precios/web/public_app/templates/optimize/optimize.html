@@ -14,7 +14,7 @@
         {% if user_baskets %}
         <div class="form-group">
             <label><strong>{{ _('Cargar Canasta Guardada') }}</strong></label>
-            <select id="basket_selector" onchange="if(this.value){ const cityEl = document.querySelector('select[name=city]'); const dateEl = document.querySelector('input[name=date]'); const cityParam = cityEl ? ('&city=' + encodeURIComponent(cityEl.value)) : ''; const dateParam = dateEl ? ('&date=' + encodeURIComponent(dateEl.value)) : ''; window.location.href='{{ url_for('optimize.optimize') }}?list_id=' + this.value + cityParam + dateParam; }" style="margin-top: 0.25rem;">
+            <select id="basket_selector" onchange="if(this.value){ const cityEl = document.querySelector('select[name=city]'); const dateEl = document.querySelector('input[name=date]'); const cityParam = cityEl ? ('&city=' + encodeURIComponent(cityEl.value)) : ''; const dateParam = dateEl ? ('&date=' + encodeURIComponent(dateEl.value)) : ''; window.location.href='{{ url_for('optimize.optimize') }}?list_id=' + this.value + cityParam + dateParam; }" class="select-spaced">
                 <option value="">-- {{ _('Seleccionar una canasta guardada...') }} --</option>
                 {% for ub in user_baskets %}
                 <option value="{{ ub.id }}" {% if list_id and list_id|string == ub.id|string %}selected{% endif %}>
@@ -48,17 +48,17 @@
 </div>
 
 {% if result %}
-<div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 1rem;">
+<div class="optimize-export-bar">
     <a href="{{ url_for('optimize.optimize', city=selected_city, date=selected_date_str, eans=eans_str, list_id=list_id, public_uuid=public_uuid, format='json') }}" class="btn btn-secondary">
         📥 {{ _('Descargar Reporte JSON') }}
     </a>
 </div>
 {% if not result.item_by_item_optimal and not result.complete_stores and not result.partial_stores %}
-<div class="card" style="border-left: 6px solid var(--warning);">
-    <h3 style="color: var(--warning); margin-top: 0;">{{ _('Sin resultados para esta selección') }}</h3>
+<div class="card card-accent-warning">
+    <h3 class="optimize-warning-title">{{ _('Sin resultados para esta selección') }}</h3>
     <p>{{ _('No se encontraron precios en comercios de') }} <strong>{{ selected_city }}</strong> {{ _('para la fecha') }} <strong>{{ selected_date_str }}</strong> {{ _('para los artículos consultados.') }}</p>
     {% if unpriced_items %}
-    <p style="color: #a0aec0; font-size: 0.9rem;">{{ _('Artículos de la canasta sin disponibilidad registrada en esta localidad:') }}</p>
+    <p class="text-muted-sm">{{ _('Artículos de la canasta sin disponibilidad registrada en esta localidad:') }}</p>
     <table>
         <thead>
             <tr>
@@ -78,38 +78,38 @@
         </tbody>
     </table>
     {% endif %}
-    <p style="margin-top: 1rem; color: #a0aec0; font-size: 0.85rem;">
+    <p class="optimize-note">
         {{ _('Sugerencia: Prueba seleccionando otra ciudad de la región o consultando artículos con precios en el catálogo.') }}
     </p>
 </div>
 {% else %}
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+<div class="optimize-summary-grid">
     {% if result.best_single_store %}
-    <div class="card" style="border-left: 6px solid var(--success); margin-bottom: 0;">
-        <span class="badge badge-lowest" style="margin-bottom: 0.5rem;">{{ _('Comercio Único') }}</span>
+    <div class="card card-accent-success optimize-summary-card">
+        <span class="badge badge-lowest badge-spaced">{{ _('Comercio Único') }}</span>
         <h2>{{ result.best_single_store.store.chain_name }} — {{ result.best_single_store.store.store_name }}</h2>
-        <p style="font-size: 1.8rem; font-weight: bold; color: var(--success); margin: 0.5rem 0;">
+        <p class="optimize-total optimize-total-success">
             {{ result.best_single_store.total_price | format_currency }}
         </p>
-        <small style="color: #a0aec0;">{{ _('Costo total comprando todos los artículos en un solo local.') }}</small>
+        <small class="text-muted">{{ _('Costo total comprando todos los artículos en un solo local.') }}</small>
     </div>
     {% endif %}
 
     {% if result.multi_store_total_price %}
-    <div class="card" style="border-left: 6px solid var(--accent); margin-bottom: 0;">
-        <span class="badge badge-info" style="margin-bottom: 0.5rem;">{{ _('Multi-Comercio Óptimo') }}</span>
+    <div class="card card-accent-info optimize-summary-card">
+        <span class="badge badge-info badge-spaced">{{ _('Multi-Comercio Óptimo') }}</span>
         <h2>{{ _('Combinación de Precios Mínimos') }}</h2>
-        <p style="font-size: 1.8rem; font-weight: bold; color: var(--accent); margin: 0.5rem 0;">
+        <p class="optimize-total optimize-total-accent">
             {{ result.multi_store_total_price | format_currency }}
         </p>
         {% if result.best_single_store and result.best_single_store.total_price > result.multi_store_total_price %}
-        <small style="color: var(--success); font-weight: bold;">
+        <small class="price-savings">
             Ahorro de {{ (result.best_single_store.total_price - result.multi_store_total_price) | format_currency }}
             ({{ "%.1f"|format(((result.best_single_store.total_price - result.multi_store_total_price) / result.best_single_store.total_price) * 100) }}%)
             dividiendo compras entre comercios.
         </small>
         {% else %}
-        <small style="color: #a0aec0;">{{ _('Costo comprando cada producto en su punto de venta más barato.') }}</small>
+        <small class="text-muted">{{ _('Costo comprando cada producto en su punto de venta más barato.') }}</small>
         {% endif %}
     </div>
     {% endif %}
@@ -118,19 +118,19 @@
 {% if result.item_by_item_optimal %}
 <div class="card">
     <h2>{{ _('Precios, Asignación Óptima y Dispersión por Artículo') }}</h2>
-    <p style="color: #a0aec0; font-size: 0.9rem;">
+    <p class="text-muted-sm">
         {{ _('Muestra el precio mínimo, precio de referencia (media geométrica), precio máximo y porcentaje de dispersión entre comercios de la ciudad.') }}
     </p>
-    <div style="overflow-x: auto;">
+    <div class="table-scroll">
         <table>
             <thead>
                 <tr>
                     <th>{{ _('Producto') }}</th>
-                    <th style="text-align: center;">{{ _('Ponderador') }}</th>
+                    <th class="cell-center">{{ _('Ponderador') }}</th>
                     <th>{{ _('Precio Mínimo') }}</th>
                     <th>{{ _('Precio Referencia') }}</th>
                     <th>{{ _('Precio Máximo') }}</th>
-                    <th style="text-align: center;">{{ _('Dispersión') }}</th>
+                    <th class="cell-center">{{ _('Dispersión') }}</th>
                     <th>{{ _('Precio Unitario') }}</th>
                 </tr>
             </thead>
@@ -139,48 +139,48 @@
                 <tr>
                     <td>
                         <div><strong>{{ opt.product.name }}</strong></div>
-                        <div style="font-size: 0.8rem; color: #a0aec0; margin-top: 2px;">
+                        <div class="item-meta">
                             <span>{{ opt.product.brand_name or '-' }}</span> | <code>{{ opt.product.ean }}</code>
                         </div>
                     </td>
-                    <td style="text-align: center;">
+                    <td class="cell-center">
                         <code>{{ opt.quantity }} × {{ opt.numerator }}/{{ opt.denominator }}</code>
                     </td>
                     <td>
-                        <strong style="color: var(--success);">{{ opt.price | format_currency }}</strong>
-                        <br><small style="color: #a0aec0;">{{ opt.cheapest_store.chain_name }} ({{ opt.cheapest_store.store_name }})</small>
+                        <strong class="price-min">{{ opt.price | format_currency }}</strong>
+                        <br><small class="branch-subtitle">{{ opt.cheapest_store.chain_name }} ({{ opt.cheapest_store.store_name }})</small>
                     </td>
                     <td>
                         {% if opt.reference_price %}
                         <span>{{ opt.reference_price | format_currency }}</span>
                         {% else %}
-                        <span style="color: #a0aec0;">-</span>
+                        <span class="text-muted">-</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if opt.max_price %}
-                        <span style="color: var(--danger);">{{ opt.max_price | format_currency }}</span>
+                        <span class="price-max">{{ opt.max_price | format_currency }}</span>
                         {% else %}
-                        <span style="color: #a0aec0;">-</span>
+                        <span class="text-muted">-</span>
                         {% endif %}
                     </td>
-                    <td style="text-align: center;">
+                    <td class="cell-center">
                         {% if opt.price_dispersion is not none %}
                             <span class="badge {% if opt.price_dispersion > 30 %}badge-danger{% elif opt.price_dispersion > 15 %}badge-warning{% else %}badge-lowest{% endif %}">
                                 {{ opt.price_dispersion }}%
                             </span>
                             {% if opt.max_price and opt.min_price and opt.max_price > opt.min_price %}
-                            <br><small style="color: #a0aec0;">+{{ (opt.max_price - opt.min_price) | format_currency }}</small>
+                            <br><small class="branch-subtitle">+{{ (opt.max_price - opt.min_price) | format_currency }}</small>
                             {% endif %}
                         {% else %}
-                            <span style="color: #a0aec0;">-</span>
+                            <span class="text-muted">-</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if opt.unit_price and opt.unit %}
                         <strong>${{ "%.2f"|format(opt.unit_price) }} / {{ opt.unit }}</strong>
                         {% else %}
-                        <span style="color: #a0aec0;">-</span>
+                        <span class="text-muted">-</span>
                         {% endif %}
                     </td>
                 </tr>
@@ -192,9 +192,9 @@
 {% endif %}
 
 {% if unpriced_items %}
-<div class="card" style="border-left: 6px solid var(--warning);">
-    <h3 style="color: var(--warning); margin-top: 0;">{{ _('Artículos sin disponibilidad en esta localidad') }} ({{ unpriced_items|length }})</h3>
-    <p style="color: #a0aec0; font-size: 0.9rem;">
+<div class="card card-accent-warning">
+    <h3 class="optimize-warning-title">{{ _('Artículos sin disponibilidad en esta localidad') }} ({{ unpriced_items|length }})</h3>
+    <p class="text-muted-sm">
         {{ _('Los siguientes artículos de la canasta no tienen precios registrados en comercios de') }} <strong>{{ selected_city }}</strong> {{ _('para el') }} <strong>{{ selected_date_str }}</strong>:
     </p>
     <table>
@@ -246,7 +246,7 @@
 {% if result.partial_stores %}
 <div class="card">
     <h2>{{ _('Comercios con Disponibilidad Parcial') }}</h2>
-    <p style="color: #a0aec0; font-size: 0.9rem;">
+    <p class="text-muted-sm">
         {{ _('Comercios que cuentan con una parte de los artículos solicitados:') }}
     </p>
     <table>

@@ -34,23 +34,11 @@ CONTROL_HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sur en Precios — Panel de Control</title>
-    <style>
-        :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --success: #22c55e; --danger: #ef4444; }
-        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 2rem; }
-        .container { max-width: 1000px; margin: 0 auto; }
-        h1 { color: var(--accent); margin-bottom: 0.5rem; }
-        .card { background: var(--card); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; border: 1px solid #334155; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #334155; }
-        th { color: var(--accent); }
-        .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }
-        .badge-success { background: rgba(34, 197, 94, 0.2); color: var(--success); }
-        .badge-danger { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
-    <div class="container">
-        <h1>Sur en Precios — Panel de Control</h1>
+<body class="control-page">
+    <main class="control-container">
+        <h1 class="control-title">Sur en Precios — Panel de Control</h1>
         <p>Monitoreo y comunicación de ejecuciones del recolector de datos.</p>
         
         <div class="card">
@@ -88,7 +76,7 @@ CONTROL_HTML_TEMPLATE = """
                 </tbody>
             </table>
         </div>
-    </div>
+    </main>
 </body>
 </html>
 """
@@ -127,7 +115,8 @@ def create_control_app(workdir: Path | None = None) -> Flask:
     engine = create_engine(f"sqlite:///{db_path}")
     ControlBase.metadata.create_all(engine)
 
-    app = Flask(__name__)
+    static_dir = Path(__file__).resolve().parent.parent / "public_app" / "static"
+    app = Flask(__name__, static_folder=str(static_dir))
 
     @app.route("/")
     @requires_auth

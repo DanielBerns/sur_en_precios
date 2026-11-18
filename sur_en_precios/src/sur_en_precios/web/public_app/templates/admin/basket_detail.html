@@ -3,16 +3,16 @@
 {% block title %}Inspección de Canasta — Administración{% endblock %}
 
 {% block content %}
-<div style="margin-bottom: 1.5rem;">
-    <a href="{{ url_for('admin.all_baskets') }}" style="color: var(--accent); font-size: 0.85rem; text-decoration: none;">&larr; Volver a la lista de canastas</a>
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-top: 0.5rem; border-bottom: 1px solid #3a506b; padding-bottom: 1rem;">
+<div class="admin-header">
+    <a href="{{ url_for('admin.all_baskets') }}" class="admin-back-link">&larr; Volver a la lista de canastas</a>
+    <div class="page-header-bordered page-header-start admin-detail-header">
         <div>
-            <h2 style="color: var(--accent); margin: 0;">{{ basket.name }}</h2>
-            <div style="color: #a0aec0; font-size: 0.9rem; margin-top: 0.35rem;">
-                <span>Propietario: <strong style="color: var(--text);">{{ basket.user.username if basket.user else 'Desconocido' }}</strong></span>
-                <span style="margin: 0 0.5rem;">|</span>
+            <h2 class="admin-title">{{ basket.name }}</h2>
+            <div class="admin-meta-row">
+                <span>Propietario: <strong>{{ basket.user.username if basket.user else 'Desconocido' }}</strong></span>
+                <span class="admin-meta-sep">|</span>
                 <span>UUID: <code>{{ basket.uuid }}</code></span>
-                <span style="margin: 0 0.5rem;">|</span>
+                <span class="admin-meta-sep">|</span>
                 {% if basket.is_public %}
                     <span class="badge badge-public">Pública</span>
                 {% else %}
@@ -20,7 +20,7 @@
                 {% endif %}
             </div>
         </div>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <div class="action-row-compact">
             <a href="{{ url_for('baskets.export_basket_prices_json', basket_id=basket.id) }}" class="btn btn-secondary">
                 Descargar Precios (JSON)
             </a>
@@ -31,16 +31,16 @@
     </div>
 </div>
 
-<div class="card" style="padding: 0; overflow-x: auto;">
-    <table style="margin-top: 0;">
+<div class="card card-table">
+    <table>
         <thead>
             <tr>
-                <th style="padding-left: 1.5rem;">Código EAN</th>
+                <th>Código EAN</th>
                 <th>Producto</th>
                 <th>Marca</th>
                 <th>Categoría</th>
-                <th style="text-align: center;">Cantidad</th>
-                <th style="text-align: center; padding-right: 1.5rem;">Estado</th>
+                <th class="cell-center">Cantidad</th>
+                <th class="cell-center">Estado</th>
             </tr>
         </thead>
         <tbody>
@@ -48,7 +48,7 @@
             {% set it = row.item %}
             {% set art = row.article %}
             <tr>
-                <td style="padding-left: 1.5rem;">
+                <td>
                     <a href="javascript:void(0)" class="ean-link" onclick="openPriceStatsModal('{{ it.ean }}')">
                         <code>{{ it.ean }}</code>
                     </a>
@@ -56,29 +56,29 @@
                 <td>
                     <strong>{{ art.name if art else (art.clean_description if art else 'Artículo no encontrado') }}</strong>
                     {% if art and art.package %}
-                        <small style="color: #a0aec0; display: block;">Envase: {{ art.package }}</small>
+                        <small class="admin-pkg-meta">Envase: {{ art.package }}</small>
                     {% endif %}
                 </td>
-                <td style="color: #a0aec0;">
+                <td class="text-muted">
                     {{ art.brand_name if art and art.brand_name else '-' }}
                 </td>
-                <td style="color: #a0aec0; font-size: 0.85rem;">
+                <td class="admin-cell-muted">
                     {{ art.category_name if art and art.category_name else '-' }}
                 </td>
-                <td style="text-align: center; font-weight: bold;">
+                <td class="cell-center cell-bold">
                     {{ it.quantity }}
                 </td>
-                <td style="text-align: center; padding-right: 1.5rem;">
+                <td class="cell-center">
                     {% if it.selected %}
                         <span class="badge badge-lowest">Seleccionado</span>
                     {% else %}
-                        <span class="badge" style="background: rgba(255,255,255,0.08); color: #a0aec0;">Omitido</span>
+                        <span class="badge badge-muted">Omitido</span>
                     {% endif %}
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="6" style="text-align: center; padding: 2rem; color: #a0aec0;">
+                <td colspan="6" class="table-empty-cell">
                     Esta canasta no contiene artículos.
                 </td>
             </tr>

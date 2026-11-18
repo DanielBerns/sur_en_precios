@@ -1,30 +1,29 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div style="margin-bottom: 1rem;">
-    <a href="{{ url_for('baskets.baskets') }}" style="color: var(--accent); text-decoration: none;">&larr; {{ _('Ir a Mis Canastas') }}</a>
+<div class="page-back-bar">
+    <a href="{{ url_for('baskets.baskets') }}" class="back-link-accent">&larr; {{ _('Ir a Mis Canastas') }}</a>
 </div>
 
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div class="card-header-bar">
         <div>
             <h2>{{ _('Canasta Compartida') }}: {{ basket.name }}</h2>
             <span class="badge badge-public">{{ _('Canasta Pública') }}</span>
-            <div style="margin-top: 0.5rem;">
+            <div class="public-basket-uuid">
                 <strong>UUID:</strong> <code>{{ basket.uuid }}</code>
             </div>
         </div>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <div class="action-row-compact">
             <button type="button" class="btn btn-secondary btn-sm" onclick="copyText('{{ basket.uuid }}', this)">{{ _('Copiar UUID') }}</button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="copyText(window.location.href, this)">{{ _('Copiar Enlace') }}</button>
             <a href="{{ url_for('baskets.export_public_basket', uuid_str=basket.uuid) }}" class="btn btn-secondary btn-sm">{{ _('Descargar YAML') }}</a>
             <a href="{{ url_for('baskets.export_public_basket_prices_json', uuid_str=basket.uuid) }}" class="btn btn-secondary btn-sm">{{ _('Descargar Precios (JSON)') }}</a>
             <a href="{{ url_for('optimize.optimize', public_uuid=basket.uuid) }}" class="btn btn-success btn-sm">{{ _('Optimizar Precios') }}</a>
-            <form method="POST" action="{{ url_for('baskets.clone_public_basket', uuid_str=basket.uuid) }}" style="display:inline;">
+            <form method="POST" action="{{ url_for('baskets.clone_public_basket', uuid_str=basket.uuid) }}" class="inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm">{{ _('Guardar en Mis Canastas') }}</button>
             </form>
-
         </div>
     </div>
 </div>

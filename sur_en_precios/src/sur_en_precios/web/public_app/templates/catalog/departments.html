@@ -4,15 +4,15 @@
 <div class="card">
     <h2>{{ _('Explorar por Categoría') }}</h2>
     <p>{{ _('Navegá por los departamentos del catálogo maestro:') }}</p>
-    <div class="grid" style="margin-top: 1.5rem;">
+    <div class="grid catalog-grid">
         {% for dept in departments %}
-        <div class="card" style="background: #13223f; border: 1px solid #3a506b; margin-bottom: 0;">
-            <h3 style="color: var(--accent); margin-top: 0;">
-                <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" style="color: var(--accent); text-decoration: none;">
+        <div class="card card-inset">
+            <h3 class="card-inset-title">
+                <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" class="card-inset-link">
                     {{ dept.name }}
                 </a>
             </h3>
-            <p style="color: #a0aec0; font-size: 0.9rem;">
+            <p class="card-inset-meta">
                 {{ dept.children|length }} {{ _('subcategorías') }}
             </p>
             <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" class="btn btn-sm">

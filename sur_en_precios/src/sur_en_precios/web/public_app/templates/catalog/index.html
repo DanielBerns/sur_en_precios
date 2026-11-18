@@ -2,8 +2,8 @@
 
 {% block content %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
-        <h2 style="margin: 0; color: var(--accent); display: flex; align-items: center; gap: 0.5rem;">
+    <div class="card-header-bar">
+        <h2 class="card-header-title">
             🔍 {{ _('Buscador de Productos') }}
         </h2>
         <a href="{{ url_for('catalog.index') }}" class="btn btn-sm btn-secondary">&larr; {{ _('Volver al Inicio') }}</a>
@@ -31,12 +31,12 @@
                     <input type="radio" id="search_mode_fuzzy" name="mode" value="fuzzy" {% if mode != 'exact' %}checked{% endif %}>
                     <label for="search_mode_fuzzy">{{ _('Búsqueda flexible (aproximada)') }}</label>
                 </span>
-                <span class="mode-option" style="margin-inline-start: 1.25rem;">
+                <span class="mode-option">
                     <input type="radio" id="search_mode_exact" name="mode" value="exact" {% if mode == 'exact' %}checked{% endif %}>
                     <label for="search_mode_exact">{{ _('Búsqueda exacta') }}</label>
                 </span>
             </fieldset>
-            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <div class="action-row">
                 <button type="submit">{{ _('Buscar Productos') }}</button>
                 {% if query or selected_city %}
                 <a href="{{ url_for('catalog.index') }}" class="btn btn-secondary">{{ _('Limpiar Búsqueda') }}</a>
@@ -48,27 +48,27 @@
 
 {% if query and products %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
-        <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-            <h2 style="margin: 0;">{{ _('Resultados de Búsqueda') }}</h2>
+    <div class="results-header">
+        <div class="results-title-group">
+            <h2 class="results-title">{{ _('Resultados de Búsqueda') }}</h2>
             {% if selected_city %}
             <span class="badge badge-info">{{ selected_city }}</span>
             {% else %}
             <span class="badge badge-private">{{ _('Todas las ciudades') }}</span>
             {% endif %}
         </div>
-        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-            <span style="color: #a0aec0; font-size: 0.9rem;">
+        <div class="results-controls">
+            <span class="results-count">
                 {{ _('Mostrando %(start)s-%(end)s de %(total)s artículos encontrados', start=pagination.start_item, end=pagination.end_item, total=pagination.total_items) }}
             </span>
-            <form method="GET" action="{{ url_for('catalog.index') }}" style="display: inline-flex; align-items: center; gap: 0.4rem; margin: 0;">
+            <form method="GET" action="{{ url_for('catalog.index') }}" class="per-page-form">
                 <input type="hidden" name="q" value="{{ query }}">
                 <input type="hidden" name="mode" value="{{ mode }}">
                 {% if selected_city %}
                 <input type="hidden" name="city" value="{{ selected_city }}">
                 {% endif %}
-                <label for="per_page_select" style="font-size: 0.85rem; color: #a0aec0; margin: 0;">{{ _('Por página:') }}</label>
-                <select id="per_page_select" name="per_page" onchange="this.form.submit()" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; background: #0b132b; color: white; border: 1px solid #3a506b; border-radius: 4px; width: auto;">
+                <label for="per_page_select" class="per-page-label">{{ _('Por página:') }}</label>
+                <select id="per_page_select" name="per_page" onchange="this.form.submit()" class="per-page-select">
                     <option value="20" {% if pagination.per_page == 20 %}selected{% endif %}>20</option>
                     <option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option>
                     <option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option>
@@ -131,8 +131,8 @@
     {% endif %}
 </div>
 {% elif query %}
-<div class="card" style="text-align: center; padding: 2.5rem 1rem; color: #a0aec0;">
-    <p style="font-size: 1.1rem; color: var(--text);">
+<div class="card empty-state">
+    <p class="empty-state-title">
         {% if selected_city %}
         {{ _('No se encontraron artículos para "%(query)s" en %(city)s.', query=query, city=selected_city) }}
         {% else %}
@@ -140,12 +140,12 @@
         {% endif %}
     </p>
     {% if selected_city %}
-    <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+    <p class="empty-state-hint">
         {{ _('Este producto puede no tener precios registrados en %(city)s.', city=selected_city) }}
-        <a href="{{ url_for('catalog.index', q=query, mode=mode) }}" style="color: var(--accent); font-weight: 600;">{{ _('Buscar en todas las ciudades') }}</a>
+        <a href="{{ url_for('catalog.index', q=query, mode=mode) }}" class="accent-link">{{ _('Buscar en todas las ciudades') }}</a>
     </p>
     {% else %}
-    <p style="font-size: 0.9rem; margin-top: 0.5rem;">
+    <p class="empty-state-hint">
         {{ _('Intente buscar por palabras clave más generales (ej: "arroz", "aceite", "leche") o verifique el código EAN.') }}
     </p>
     {% endif %}

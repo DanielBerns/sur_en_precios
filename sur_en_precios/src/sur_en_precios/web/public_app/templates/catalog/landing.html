@@ -9,8 +9,8 @@
         🏛️ UNPSJB · Facultad de Ciencias Económicas · Observatorio de Economía
     </div>
     
-    <div style="margin: 0.5rem 0 1rem 0; display: flex; justify-content: center; align-items: center;">
-        <img src="{{ url_for('static', filename='img/chakana.svg') }}" alt="Chakana Sur en Precios" width="90" height="90" class="brand-logo" style="filter: drop-shadow(0 4px 12px rgba(255, 0, 0, 0.45));">
+    <div class="hero-logo-wrap">
+        <img src="{{ url_for('static', filename='img/chakana.svg') }}" alt="Chakana Sur en Precios" width="90" height="90" class="brand-logo hero-logo">
     </div>
 
     <h1 class="hero-title">Sur en <span>Precios</span></h1>
@@ -40,13 +40,13 @@
                     <button type="submit" class="btn btn-lg">{{ _('Buscar') }} <span aria-hidden="true">🔍</span></button>
                 </div>
                 
-                <fieldset class="mode-selector" style="justify-content: center; margin-bottom: 0.5rem;">
+                <fieldset class="mode-selector mode-selector-centered">
                     <legend class="visually-hidden">{{ _('Modo de búsqueda') }}</legend>
                     <span class="mode-option">
                         <input type="radio" id="hero_mode_fuzzy" name="mode" value="fuzzy" checked>
                         <label for="hero_mode_fuzzy">{{ _('Búsqueda flexible (aproximada)') }}</label>
                     </span>
-                    <span class="mode-option" style="margin-inline-start: 1.25rem;">
+                    <span class="mode-option">
                         <input type="radio" id="hero_mode_exact" name="mode" value="exact">
                         <label for="hero_mode_exact">{{ _('Búsqueda exacta') }}</label>
                     </span>
@@ -67,7 +67,7 @@
         </search>
     </div>
 
-    <div class="hero-actions" style="margin-top: 2rem;">
+    <div class="hero-actions">
         <a href="{{ url_for('catalog.departments') }}" class="btn btn-secondary">📂 Explorar Categorías</a>
         <a href="{{ url_for('baskets.baskets') }}" class="btn btn-secondary">🛒 Mis Canastas</a>
         <a href="{{ url_for('optimize.optimize') }}" class="btn btn-success">⚡ Optimizar Precios</a>
@@ -93,7 +93,7 @@
             <p>
                 Buscador ágil con tolerancia a faltas y abreviaturas sobre miles de artículos en góndola. Permite consultar al instante precios por comercio y precios por unidad de medida (kilo, litro).
             </p>
-            <a href="{{ url_for('catalog.search_view') }}" class="btn btn-sm btn-secondary" style="align-self: flex-start;">Ver Buscador &rarr;</a>
+            <a href="{{ url_for('catalog.search_view') }}" class="btn btn-sm btn-secondary feature-card-action">Ver Buscador &rarr;</a>
         </div>
 
         <div class="feature-card">
@@ -102,7 +102,7 @@
             <p>
                 Calculamos la <strong>media geométrica</strong> diaria oficial (SEPA) para amortiguar precios extremos y proveer un valor de referencia objetivo, junto al porcentaje de dispersión entre supermercados.
             </p>
-            <a href="{{ url_for('catalog.help') }}#metricas" class="btn btn-sm btn-secondary" style="align-self: flex-start;">Ver Metodología &rarr;</a>
+            <a href="{{ url_for('catalog.help') }}#metricas" class="btn btn-sm btn-secondary feature-card-action">Ver Metodología &rarr;</a>
         </div>
 
         <div class="feature-card">
@@ -111,7 +111,7 @@
             <p>
                 Creá tus listas de compras habituales. Gracias a nuestro esquema desacoplado mediante código de barras EAN, tus canastas se mantienen intactas día tras día y podés compartirlas públicamente.
             </p>
-            <a href="{{ url_for('baskets.baskets') }}" class="btn btn-sm btn-secondary" style="align-self: flex-start;">Gestionar Canastas &rarr;</a>
+            <a href="{{ url_for('baskets.baskets') }}" class="btn btn-sm btn-secondary feature-card-action">Gestionar Canastas &rarr;</a>
         </div>
 
         <div class="feature-card">
@@ -120,14 +120,14 @@
             <p>
                 Compara tu canasta completa entre todas las cadenas comerciales de la localidad. Te indica cuál es el supermercado más económico para comprar todo junto y cuánto ahorrás dividiendo la compra.
             </p>
-            <a href="{{ url_for('optimize.optimize') }}" class="btn btn-sm btn-success" style="align-self: flex-start;">Probar Optimizador &rarr;</a>
+            <a href="{{ url_for('optimize.optimize') }}" class="btn btn-sm btn-success feature-card-action">Probar Optimizador &rarr;</a>
         </div>
     </div>
 </section>
 
 <!-- Departments Navigation Section -->
 {% if departments %}
-<section id="rubros" style="margin: 3.5rem 0;">
+<section id="rubros" class="landing-section-rubros">
     <div class="section-header">
         <span class="section-tag">Clasificación Taxonómica</span>
         <h2 class="section-title">Navegar por Rubros y Departamentos</h2>
@@ -136,12 +136,12 @@
         </p>
     </div>
 
-    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center;">
+    <div class="departments-pill-grid">
         {% for dept in departments %}
-        <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" class="card" style="padding: 1rem 1.5rem; margin-bottom: 0; text-decoration: none; color: inherit; display: flex; align-items: center; gap: 0.6rem; transition: all 0.2s ease;">
-            <span style="font-size: 1.3rem;">📦</span>
+        <a href="{{ url_for('catalog.department_view', slug=dept.slug) }}" class="card dept-pill-card">
+            <span class="dept-pill-icon" aria-hidden="true">📦</span>
             <div>
-                <strong style="color: var(--accent);">{{ dept.name }}</strong>
+                <strong class="dept-pill-name">{{ dept.name }}</strong>
             </div>
         </a>
         {% endfor %}
@@ -150,7 +150,7 @@
 {% endif %}
 
 <!-- Institutional Framework Section -->
-<section id="institucional" style="margin-top: 4rem;">
+<section id="institucional" class="landing-section">
     <div class="section-header">
         <span class="section-tag">Respaldo Institucional</span>
         <h2 class="section-title">Marco Institucional y Académico</h2>
@@ -163,7 +163,7 @@
         <!-- UNPSJB -->
         <article class="inst-box" id="unpsjb">
             <span class="badge badge-active">Universidad Pública</span>
-            <h3 style="margin-top: 0.75rem;">
+            <h3>
                 🏛️ Universidad Nacional de la Patagonia San Juan Bosco
             </h3>
             <p>
@@ -171,14 +171,14 @@
             </p>
             <div class="inst-meta">
                 <span>📍 <strong>Sede Central:</strong> Ruta Provincial 3 Km 4, Comodoro Rivadavia, Chubut</span>
-                <span>🌐 <strong>Sitio oficial:</strong> <a href="http://www.unp.edu.ar" target="_blank" rel="noopener" style="color: var(--accent);">www.unp.edu.ar</a></span>
+                <span>🌐 <strong>Sitio oficial:</strong> <a href="http://www.unp.edu.ar" target="_blank" rel="noopener">www.unp.edu.ar</a></span>
             </div>
         </article>
 
         <!-- Facultad de Ciencias Económicas -->
         <article class="inst-box" id="fce">
             <span class="badge badge-active">Unidad Académica Responsable</span>
-            <h3 style="margin-top: 0.75rem;">
+            <h3>
                 📈 Facultad de Ciencias Económicas (FCE - UNPSJB)
             </h3>
             <p>
@@ -193,15 +193,15 @@
         <!-- Observatorio de Economía -->
         <article class="inst-box" id="oernp">
             <span class="badge badge-active">Equipo de Investigación & Desarrollo</span>
-            <h3 style="margin-top: 0.75rem;">
+            <h3>
                 🔭 Observatorio de Economía de los Recursos Naturales de la Patagonia
             </h3>
             <p>
                 El <strong>Observatorio de Economía de los Recursos Naturales de la Patagonia</strong> (OERNP / Observatorio de Economía de la FCE) es el espacio técnico especializado en el relevamiento continuo, análisis cuantitativo y difusión de variables socioeconómicas, precios al consumidor, hidrocarburos, pesca, energía y actividad comercial de la cuenca. Es el equipo científico impulsor del proyecto <em>Sur en Precios</em>.
             </p>
             <div class="inst-meta">
-                <span>✉️ <strong>Correo electrónico:</strong> <a href="mailto:observatorioFCE@gmail.com" style="color: var(--accent);">observatorioFCE@gmail.com</a></span>
-                <span>📷 <strong>Instagram oficial:</strong> <a href="https://www.instagram.com/observatoriofce.unpsjb" target="_blank" rel="noopener" style="color: var(--accent);">@observatoriofce.unpsjb</a></span>
+                <span>✉️ <strong>Correo electrónico:</strong> <a href="mailto:observatorioFCE@gmail.com">observatorioFCE@gmail.com</a></span>
+                <span>📷 <strong>Instagram oficial:</strong> <a href="https://www.instagram.com/observatoriofce.unpsjb" target="_blank" rel="noopener">@observatoriofce.unpsjb</a></span>
                 <span>📞 <strong>Contacto telefónico:</strong> (0297) 537-2525</span>
             </div>
         </article>
@@ -209,9 +209,9 @@
 </section>
 
 <!-- Reserved Spaces for Interdisciplinary Collaboration -->
-<section id="espacios-reservados" style="margin-top: 4rem;">
+<section id="espacios-reservados" class="landing-section">
     <div class="section-header">
-        <span class="section-tag" style="color: #ce93d8;">Alianzas Interdisciplinarias</span>
+        <span class="section-tag section-tag-reserved">Alianzas Interdisciplinarias</span>
         <h2 class="section-title">Espacios Reservados para Articulación Académica</h2>
         <p class="section-desc">
             Espacios formalmente asignados dentro de la plataforma para la integración y colaboración técnica, científica y comunitaria de facultades y grupos de investigación de la UNPSJB.
@@ -226,7 +226,7 @@
             <p>
                 Espacio reservado para la articulación técnica en arquitectura de sistemas, ingeniería de software distribuida, optimización de infraestructura cloud, seguridad informática y tratamiento masivo de datos abiertos para la optimización de procesos de monitoreo.
             </p>
-            <div style="margin-top: 1rem; font-size: 0.8rem; color: #b39ddb;">
+            <div class="reserved-card-meta">
                 🔗 <em>Articulación en diseño tecnológico e infraestructura</em>
             </div>
         </div>
@@ -238,7 +238,7 @@
             <p>
                 Espacio reservado para la cooperación en modelado matemático avanzado, procesamiento estadístico de señales y datos, algoritmos de aprendizaje computacional para series temporales de precios y detección de patrones y anomalías en las cadenas de comercialización.
             </p>
-            <div style="margin-top: 1rem; font-size: 0.8rem; color: #b39ddb;">
+            <div class="reserved-card-meta">
                 🔗 <em>Articulación en modelos predictivos y analítica computacional</em>
             </div>
         </div>
@@ -250,7 +250,7 @@
             <p>
                 Espacio reservado para el estudio cualitativo y cuantitativo del impacto social del costo de vida, dinámicas comunitarias de consumo, democratización del acceso a bienes esenciales, género y economía del cuidado, y comunicación comunitaria en el territorio.
             </p>
-            <div style="margin-top: 1rem; font-size: 0.8rem; color: #b39ddb;">
+            <div class="reserved-card-meta">
                 🔗 <em>Articulación en estudios socioterritoriales y comunitarios</em>
             </div>
         </div>
@@ -258,7 +258,7 @@
 </section>
 
 <!-- Other Tools & Portfolio Section -->
-<section id="herramientas" style="margin-top: 4rem;">
+<section id="herramientas" class="landing-section">
     <div class="section-header">
         <span class="section-tag">Portafolio y Ecosistema Digital</span>
         <h2 class="section-title">Otras Herramientas Desarrolladas por el Grupo</h2>
@@ -271,7 +271,7 @@
         <!-- Tool 1: Buscador de Productos -->
         <article class="tool-card">
             <div class="tool-card-img-wrapper">
-                <img src="{{ url_for('static', filename='img/buscador-productos.jpg') }}" alt="Buscador de Productos" class="tool-card-img" onerror="this.onerror=null; this.src='{{ url_for('static', filename='img/chakana.svg') }}'; this.style.objectFit='contain'; this.style.padding='2rem';">
+                <img src="{{ url_for('static', filename='img/buscador-productos.jpg') }}" alt="Buscador de Productos" class="tool-card-img" onerror="this.onerror=null; this.src='{{ url_for('static', filename='img/chakana.svg') }}'; this.classList.add('tool-card-img-fallback');">
             </div>
             <div class="tool-card-body">
                 <div>
@@ -289,8 +289,8 @@
 
         <!-- Tool 2: Monitor San Jorge (Streamlit) -->
         <article class="tool-card">
-            <div class="tool-card-img-wrapper" style="background: radial-gradient(circle, #253355 0%, #131c33 100%);">
-                <div style="font-size: 3.5rem;">📊</div>
+            <div class="tool-card-img-wrapper tool-card-img-wrapper-monitor">
+                <div class="tool-card-emoji" aria-hidden="true">📊</div>
             </div>
             <div class="tool-card-body">
                 <div>
@@ -309,7 +309,7 @@
         <!-- Tool 3: Buscador de Materiales -->
         <article class="tool-card">
             <div class="tool-card-img-wrapper">
-                <img src="{{ url_for('static', filename='img/buscador-materiales.jpg') }}" alt="Buscador de Materiales" class="tool-card-img" onerror="this.onerror=null; this.src='{{ url_for('static', filename='img/chakana.svg') }}'; this.style.objectFit='contain'; this.style.padding='2rem';">
+                <img src="{{ url_for('static', filename='img/buscador-materiales.jpg') }}" alt="Buscador de Materiales" class="tool-card-img" onerror="this.onerror=null; this.src='{{ url_for('static', filename='img/chakana.svg') }}'; this.classList.add('tool-card-img-fallback');">
             </div>
             <div class="tool-card-body">
                 <div>
@@ -328,33 +328,33 @@
 </section>
 
 <!-- Methodology & Data Transparency -->
-<section id="metodologia" class="card" style="margin-top: 4rem; background: linear-gradient(180deg, #1c2541 0%, #131c33 100%);">
-    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
-        <span style="font-size: 1.8rem;">📐</span>
+<section id="metodologia" class="card methodology-card">
+    <div class="methodology-header">
+        <span class="methodology-icon" aria-hidden="true">📐</span>
         <div>
-            <h2 style="margin: 0; color: var(--accent);">Transparencia Metodológica y Datos Oficiales</h2>
-            <small style="color: var(--text-muted);">Fuentes públicas, reproducibilidad científica y rigor estadístico</small>
+            <h2 class="methodology-title">Transparencia Metodológica y Datos Oficiales</h2>
+            <small class="methodology-subtitle">Fuentes públicas, reproducibilidad científica y rigor estadístico</small>
         </div>
     </div>
     
-    <div class="grid" style="margin-top: 1.5rem;">
+    <div class="grid methodology-grid">
         <div>
-            <h4 style="color: #ffffff; margin-top: 0;">Fuente Oficial SEPA</h4>
-            <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.55;">
+            <h4 class="methodology-col-title">Fuente Oficial SEPA</h4>
+            <p class="methodology-col-text">
                 Los datos son recopilados diariamente a partir de los conjuntos de datos abiertos del <strong>Sistema Electrónico de Publicidad de Precios Argentinos (SEPA - Precios Claros)</strong> provistos por la Secretaría de Comercio de la Nación. Se filtran rigurosamente las sucursales habilitadas en la región patagónica.
             </p>
         </div>
 
         <div>
-            <h4 style="color: #ffffff; margin-top: 0;">Media Geométrica de Precios</h4>
-            <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.55;">
+            <h4 class="methodology-col-title">Media Geométrica de Precios</h4>
+            <p class="methodology-col-text">
                 Siguiendo las mejores prácticas internacionales en elaboración de índices de precios, el <strong>Precio de Referencia</strong> de cada producto se calcula utilizando la media geométrica de todas las cotizaciones del día. Esto evita que una oferta aislada o un precio tipográfico anómalo altere el valor orientativo.
             </p>
         </div>
     </div>
 
-    <div style="border-top: 1px solid #3a506b; padding-top: 1.25rem; margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-        <span style="font-size: 0.9rem; color: #a0aec0;">
+    <div class="methodology-footer">
+        <span class="methodology-footer-text">
             ¿Tenés dudas sobre cómo utilizar la plataforma o interpretar los indicadores?
         </span>
         <a href="{{ url_for('catalog.help') }}" class="btn btn-sm btn-outline">Consultar la Guía de Ayuda Completa &rarr;</a>

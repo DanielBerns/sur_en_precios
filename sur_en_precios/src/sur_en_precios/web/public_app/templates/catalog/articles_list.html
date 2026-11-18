@@ -4,13 +4,13 @@
 <div class="card">
     <p>
         {% if back_url %}
-        <a href="{{ back_url }}" style="color: var(--muted); text-decoration: none;">← {{ back_label }}</a>
+        <a href="{{ back_url }}" class="back-link">← {{ back_label }}</a>
         {% else %}
-        <a href="{{ url_for('catalog.departments') }}" style="color: var(--muted); text-decoration: none;">← {{ _('Categorías') }}</a>
+        <a href="{{ url_for('catalog.departments') }}" class="back-link">← {{ _('Categorías') }}</a>
         {% endif %}
     </p>
     <h2>{{ title }}</h2>
-    <p style="color: #a0aec0;">{{ subtitle }}</p>
+    <p class="page-subtitle">{{ subtitle }}</p>
     {% if articles %}
     <table>
         <thead>
@@ -35,7 +35,7 @@
                 <td>{{ a.package or '-' }}</td>
                 <td>
                     {% for tag in a.tags %}
-                    <a href="{{ url_for('catalog.tag_view', name=tag.name) }}" class="badge" style="background: #253355; color: var(--accent); text-decoration: none; margin-right: 4px;">
+                    <a href="{{ url_for('catalog.tag_view', name=tag.name) }}" class="badge badge-tag">
                         #{{ tag.name }}
                     </a>
                     {% endfor %}
@@ -73,7 +73,7 @@
     </nav>
     {% endif %}
     {% else %}
-    <p style="padding: 1rem; color: #a0aec0;">{{ _('No se encontraron artículos.') }}</p>
+    <p class="empty-inline">{{ _('No se encontraron artículos.') }}</p>
     {% endif %}
 </div>
 {% endblock %}
