@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sur en Precios — Editor Visual de Paleta (style.css)</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/chakana.svg">
+    <link rel="stylesheet" href="/editor-static/editor.css">
+</head>
+<body>
+    <!-- Top Workspace Toolbar -->
+    <header class="editor-topbar">
+        <div class="topbar-brand">
+            <img src="/static/img/chakana.svg" alt="Chakana" width="28" height="28" class="topbar-logo">
+            <div>
+                <h1 class="topbar-title">Editor Visual de Paleta</h1>
+                <span class="topbar-subtitle"><code>style.css</code> · 41 tokens base + 26 derivados <code>color-mix()</code></span>
+            </div>
+        </div>
+
+        <div class="topbar-controls">
+            <!-- Preview Target Selector -->
+            <div class="control-cluster">
+                <label for="preview_route_select" class="cluster-label">Vista Previa:</label>
+                <select id="preview_route_select" class="topbar-select" title="Seleccionar vista o página en vivo">
+                    {% for route in preview_routes %}
+                    <option value="{{ route.url }}">{{ route.label }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" id="btn_reload_preview" class="btn-tool" title="Recargar vista previa">↻</button>
+            </div>
+
+            <!-- Preset Selector & Management -->
+            <div class="control-cluster">
+                <label for="preset_select" class="cluster-label">Preset:</label>
+                <select id="preset_select" class="topbar-select" title="Cargar paleta predefinida o guardada">
+                    <option value="">— Seleccionar Preset —</option>
+                    {% for preset in presets %}
+                    <option value="{{ preset.slug }}">
+                        {{ "🏛️ " if preset.builtin else "👤 " }}{{ preset.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button type="button" id="btn_open_save_preset" class="btn-tool" title="Guardar paleta actual como preset">
+                    💾 Guardar Preset
+                </button>
+                <button type="button" id="btn_delete_preset" class="btn-tool btn-tool-danger" hidden title="Eliminar preset personalizado seleccionado">
+                    🗑️
+                </button>
+                <button type="button" id="btn_open_import" class="btn-tool" title="Importar paleta desde archivo YAML o JSON">
+                    📂 Importar
+                </button>
+            </div>
+
+            <!-- History & Comparison Controls -->
+            <div class="control-cluster">
+                <button type="button" id="btn_undo" class="btn-tool" disabled title="Deshacer cambio (Ctrl+Z)">
+                    ↶ Deshacer
+                </button>
+                <button type="button" id="btn_redo" class="btn-tool" disabled title="Rehacer cambio (Ctrl+Y)">
+                    ↷ Rehacer
+                </button>
+                <button type="button" id="btn_compare_toggle" class="btn-tool" aria-pressed="false" title="Alternar entre la paleta editada y la guardada en style.css">
+                    👁️ Antes / Después
+                </button>
+                <button type="button" id="btn_reset_saved" class="btn-tool" disabled title="Descartar cambios no guardados y volver al style.css actual">
+                    ↺ Restaurar Guardado
+                </button>
+            </div>
+
+            <!-- Export & Direct Disk Save -->
+            <div class="control-cluster">
+                <button type="button" id="btn_export_css" class="btn-tool" title="Descargar archivo style.css modificado">
+                    ⬇ Descargar CSS
+                </button>
+                <button type="button" id="btn_export_yaml" class="btn-tool" title="Descargar paleta actual en formato YAML">
+                    ⬇ YAML
+                </button>
+                <button type="button" id="btn_save_css" class="btn-primary-save" title="Guardar cambios directamente en style.css en disco">
+                    ✔ Guardar en style.css
+                    <span id="unsaved_badge" class="unsaved-pill" hidden>● Sin guardar</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Status Notification Banner -->
+    <div id="status_toast" class="status-toast" role="status" aria-live="polite" hidden>
+        <span id="status_toast_icon" aria-hidden="true">✔</span>
+        <span id="status_toast_text">Listo</span>
+        <button type="button" id="status_toast_close" class="toast-close" aria-label="Cerrar notificación">&times;</button>
+    </div>
+
+    <!-- Main Split Workspace -->
+    <div class="editor-workspace">
+        <!-- Left Sidebar: Token Controls, Group HSL & WCAG Contrast -->
+        <aside class="editor-sidebar" aria-label="Controles de paleta de colores">
+            <!-- Filter, Scheme & Inspector Bar -->
+            <div class="sidebar-toolbar">
+                <div class="sidebar-search-row">
+                    <input type="search" id="token_filter_input" class="sidebar-search" placeholder="Filtrar token (ej: accent, surface, texto...)" aria-label="Filtrar tokens de color">
+                    <button type="button" id="btn_clear_filter" class="btn-tool" hidden title="Limpiar filtro">✕</button>
+                </div>
+
+                <div class="sidebar-options-row">
+                    <label class="inspect-switch" title="Activar para hacer clic en cualquier elemento de la vista previa y localizar sus tokens de color">
+                        <input type="checkbox" id="inspect_mode_toggle">
+                        <span>🔍 Inspeccionar Elemento</span>
+                    </label>
+
+                    <div class="scheme-control">
+                        <label for="color_scheme_select">Esquema:</label>
+                        <select id="color_scheme_select" class="scheme-select" title="Propiedad CSS color-scheme en :root">
+                            <option value="auto">Auto (según fondo)</option>
+                            <option value="dark">Oscuro (dark)</option>
+                            <option value="light">Claro (light)</option>
+                        </select>
+                    </div>
+
+                    <button type="button" id="btn_toggle_all_groups" class="btn-tool btn-tool-xs" aria-expanded="true">
+                        Contraer grupos
+                    </button>
+                </div>
+
+                <div id="inspect_active_banner" class="inspect-banner" hidden>
+                    <span>🎯 <strong>Modo Inspección activo:</strong> Hacé clic en cualquier elemento de la vista previa para filtrar sus tokens.</span>
+                    <button type="button" id="btn_show_all_tokens" class="btn-tool btn-tool-xs">Ver todos (41)</button>
+                </div>
+            </div>
+
+            <!-- Scrollable Accordion of 5 @group Sections -->
+            <section class="token-accordion" id="token_accordion" aria-label="Grupos de tokens de color">
+                {% for group in palette.groups %}
+                <details class="token-group" data-group-id="{{ group.id }}" open>
+                    <summary class="token-group-summary">
+                        <strong class="group-summary-title">{{ group.title }}</strong>
+                        <span class="group-summary-count">{{ group.tokens | length }} tokens</span>
+                    </summary>
+
+                    <div class="token-group-body">
+                        <p class="group-description">{{ group.description }}</p>
+
+                        <!-- Group HSL Batch Adjuster -->
+                        <details class="group-hsl-panel" data-hsl-group="{{ group.id }}">
+                            <summary class="group-hsl-summary">
+                                🎛️ Ajustar Tono / Saturación / Luz del grupo
+                            </summary>
+                            <div class="group-hsl-controls">
+                                <div class="hsl-slider-row">
+                                    <label for="hsl_h_{{ loop.index }}">Tono (ΔH)</label>
+                                    <input type="range" id="hsl_h_{{ loop.index }}" class="hsl-slider" data-hsl-channel="h" min="-180" max="180" value="0">
+                                    <output id="hsl_h_out_{{ loop.index }}" class="hsl-output">0°</output>
+                                </div>
+                                <div class="hsl-slider-row">
+                                    <label for="hsl_s_{{ loop.index }}">Saturación (ΔS)</label>
+                                    <input type="range" id="hsl_s_{{ loop.index }}" class="hsl-slider" data-hsl-channel="s" min="-50" max="50" value="0">
+                                    <output id="hsl_s_out_{{ loop.index }}" class="hsl-output">0%</output>
+                                </div>
+                                <div class="hsl-slider-row">
+                                    <label for="hsl_l_{{ loop.index }}">Luminosidad (ΔL)</label>
+                                    <input type="range" id="hsl_l_{{ loop.index }}" class="hsl-slider" data-hsl-channel="l" min="-50" max="50" value="0">
+                                    <output id="hsl_l_out_{{ loop.index }}" class="hsl-output">0%</output>
+                                </div>
+                                <div class="hsl-actions-row">
+                                    <button type="button" class="btn-tool btn-tool-xs btn-hsl-apply" data-group-id="{{ group.id }}">
+                                        ✔ Fijar ajuste
+                                    </button>
+                                    <button type="button" class="btn-tool btn-tool-xs btn-hsl-cancel" data-group-id="{{ group.id }}">
+                                        ↺ Revertir sliders
+                                    </button>
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- Token Rows -->
+                        <div class="token-list">
+                            {% for token in group.tokens %}
+                            <div class="token-row"
+                                 id="row_{{ token.name }}"
+                                 data-token="{{ token.name }}"
+                                 data-group="{{ group.id }}"
+                                 data-search="{{ token.name }} {{ token.label | lower }} {{ token.description | lower }}">
+                                <div class="token-row-main">
+                                    <input type="color"
+                                           class="token-color-picker"
+                                           id="picker_{{ token.name }}"
+                                           data-token="{{ token.name }}"
+                                           value="{{ token.value }}"
+                                           aria-label="Selector de color para {{ token.label }} ({{ token.name }})">
+
+                                    <div class="token-info">
+                                        <div class="token-title-line">
+                                            <label for="picker_{{ token.name }}" class="token-label">{{ token.label }}</label>
+                                            <span class="token-modified-dot" data-modified-for="{{ token.name }}" hidden title="Modificado respecto a style.css">● Editado</span>
+                                        </div>
+                                        <code class="token-var-name">{{ token.name }}</code>
+                                    </div>
+
+                                    <div class="token-inputs">
+                                        <input type="text"
+                                               class="token-hex-input"
+                                               id="hex_{{ token.name }}"
+                                               data-token="{{ token.name }}"
+                                               value="{{ token.value }}"
+                                               maxlength="7"
+                                               pattern="^#[0-9a-fA-F]{6}$"
+                                               spellcheck="false"
+                                               aria-label="Valor hexadecimal para {{ token.name }}">
+                                        <button type="button"
+                                                class="btn-token-reset"
+                                                data-reset-token="{{ token.name }}"
+                                                hidden
+                                                title="Restaurar valor guardado en style.css">
+                                            ↺
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="token-meta-line">
+                                    <span class="token-desc">{{ token.description }}</span>
+                                    {% if token.derived_dependents %}
+                                    <span class="token-derived-badge" title="Deriva automáticamente: {{ token.derived_dependents | join(', ') }}">
+                                        +{{ token.derived_dependents | length }} derivados
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </details>
+                {% endfor %}
+            </section>
+
+            <!-- WCAG 2.1 Live Contrast Checker Panel -->
+            <details class="contrast-panel" open>
+                <summary class="contrast-panel-summary">
+                    <strong class="group-summary-title">⚖️ Verificador de Contraste WCAG 2.1</strong>
+                    <span id="contrast_summary_badge" class="contrast-summary-pill">Evaluando...</span>
+                </summary>
+                <div id="contrast_checks_list" class="contrast-list">
+                    <!-- Populated dynamically by editor.js -->
+                </div>
+            </details>
+        </aside>
+
+        <!-- Right Main Viewport: Same-Origin Live Preview Iframe -->
+        <main class="editor-preview-pane" aria-label="Lienzo de vista previa en vivo">
+            <div class="preview-header-strip">
+                <div class="preview-strip-left">
+                    <span class="preview-live-indicator">● VISTA PREVIA EN VIVO</span>
+                    <code id="preview_current_url" class="preview-url-pill">/preview/kitchen-sink</code>
+                </div>
+                <div class="preview-strip-right">
+                    <span id="preview_hover_hint" class="preview-hint">
+                        Pasá el cursor sobre un token para resaltar dónde se usa
+                    </span>
+                </div>
+            </div>
+            <div class="preview-iframe-container">
+                <iframe id="preview_iframe"
+                        src="/preview/kitchen-sink"
+                        title="Vista previa interactiva de Sur en Precios"></iframe>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Dialog: Save Custom Preset -->
+    <dialog id="save_preset_dialog" aria-labelledby="save_preset_title" closedby="any">
+        <h2 id="save_preset_title" class="dialog-title">💾 Guardar Preset de Paleta</h2>
+        <p class="dialog-desc">
+            Guarda la combinación actual de 41 colores como un preset YAML reutilizable en el directorio de trabajo.
+        </p>
+        <form id="save_preset_form" method="dialog">
+            <div class="dialog-field">
+                <label for="preset_name_input">Nombre del Preset</label>
+                <input type="text" id="preset_name_input" placeholder="Ej: Patagonia Invernal" required maxlength="60" autofocus>
+            </div>
+            <div class="dialog-field">
+                <label for="preset_desc_input">Descripción (opcional)</label>
+                <input type="text" id="preset_desc_input" placeholder="Notas sobre el contraste o propósito del tema" maxlength="160">
+            </div>
+            <div class="dialog-actions">
+                <button type="submit" value="cancel" formnovalidate class="btn-tool">Cancelar</button>
+                <button type="submit" value="save" class="btn-primary-save">Guardar Preset</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Modal Dialog: Import Palette YAML / JSON -->
+    <dialog id="import_palette_dialog" aria-labelledby="import_palette_title" closedby="any">
+        <h2 id="import_palette_title" class="dialog-title">📂 Importar Paleta (YAML / JSON)</h2>
+        <p class="dialog-desc">
+            Seleccioná un archivo <code>.yaml</code> o <code>.json</code> exportado previamente, o pegá su contenido a continuación.
+        </p>
+        <form id="import_palette_form" method="dialog">
+            <div class="dialog-field">
+                <label for="import_file_input">Cargar desde archivo local</label>
+                <input type="file" id="import_file_input" accept=".yaml,.yml,.json">
+            </div>
+            <div class="dialog-field">
+                <label for="import_text_area">Contenido YAML o JSON</label>
+                <textarea id="import_text_area" rows="7" placeholder="--color-bg: &quot;#0b132b&quot;&#10;--color-surface: &quot;#1c2541&quot;..."></textarea>
+            </div>
+            <div class="dialog-actions">
+                <button type="submit" value="cancel" formnovalidate class="btn-tool">Cancelar</button>
+                <button type="submit" value="import" class="btn-primary-save">Aplicar Paleta</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Initial Server Bootstrap Data -->
+    <script id="initial_palette_data" type="application/json">
+        {{ initial_payload | tojson }}
+    </script>
+    <script src="/editor-static/editor.js"></script>
+</body>
+</html>

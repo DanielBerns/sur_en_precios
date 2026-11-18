@@ -284,7 +284,16 @@ uv run python -m sur_en_precios.web.control_app.app
 Open browser at: `http://localhost:5001`  
 *(Default Credentials: `admin` / `sur_precios_2026`)*
 
-### 4. Deploying to PythonAnywhere (Virtualenv & `pip`)
+### 4. Launch the Local-Network Visual Color Palette Editor (`style.css`)
+
+Standalone local-network visual editor for the 41 base color tokens in `style.css`, complete with live 60fps Kitchen Sink and embedded `public_app` previews, WCAG 2.1 contrast checker, bidirectional Element ↔ Token inspector, group HSL batch adjusters, and YAML presets:
+
+```bash
+uv run python -m sur_en_precios.tools.run_style_editor --host 0.0.0.0 --port 5002
+```
+Open browser on the local network at: `http://localhost:5002`
+
+### 5. Deploying to PythonAnywhere (Virtualenv & `pip`)
 
 PythonAnywhere uses `pip` inside virtual environments. The production `requirements.txt` is exported directly via `uv`:
 
@@ -326,6 +335,7 @@ application = create_app()
 | **Run Harvest** | `sur_en_precios.tools.run_harvest` | Scrapes remote SEPA web portal and downloads archives. | `--workdir`, `--force` |
 | **Run ETL** | `sur_en_precios.tools.run_etl` | Processes raw CSV files into regional `public.sqlite`. | `--region`, `--date`, `--workdir` |
 | **Log Analyzer** | `sur_en_precios.tools.log_analyzer` | Queries and filters structured JSON execution logs. | `--summary`, `--level`, `--search`, `--tail` |
+| **Style Editor** | `sur_en_precios.tools.run_style_editor` | Launches the local-network visual color palette editor for `style.css`. | `--host`, `--port`, `--workdir`, `--style-css` |
 
 ---
 

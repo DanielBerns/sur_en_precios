@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sur en Precios — Kitchen Sink de Componentes (style.css)</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/chakana.svg">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body data-tokens="--color-bg --color-text">
+    <!-- 1. Site Header -->
+    <header class="site-header" data-tokens="--color-surface-header --color-accent --color-text">
+        <a href="#inicio" class="brand-link" data-tokens="--color-accent --color-logo-glow">
+            <img src="/static/img/chakana.svg" alt="Chakana" class="brand-logo" width="38" height="38" data-tokens="--color-logo-glow">
+            <span class="brand-title" data-tokens="--color-accent">Sur en Precios</span>
+        </a>
+        <nav class="site-nav" aria-label="Navegación de muestra">
+            <a href="#hero-showcase" data-tokens="--color-text --color-accent">Portada Hero</a>
+            <a href="#status-showcase" data-tokens="--color-text --color-accent">Estados y Botones</a>
+            <a href="#prices-showcase" data-tokens="--color-text --color-accent">Precios y Tablas</a>
+            <a href="#forms-showcase" data-tokens="--color-text --color-accent">Formularios</a>
+            <a href="#institucional-showcase" data-tokens="--color-text --color-accent">Institucional</a>
+            <a href="#admin-showcase" class="nav-admin-link" data-tokens="--color-warning">🛠️ Panel Admin</a>
+            <span class="nav-user" data-tokens="--color-text-muted">👤 <strong>admin_preview</strong></span>
+            <a href="#logout" class="nav-logout" data-tokens="--color-danger">Cerrar Sesión</a>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- 2. Hero Welcome & Search Showcase -->
+        <section class="hero" id="hero-showcase" data-tokens="--color-hero-bg-start --color-hero-bg-end --color-border --color-shadow">
+            <div class="hero-badge" data-tokens="--color-accent --color-surface-elevated">
+                🏛️ UNPSJB · Facultad de Ciencias Económicas · Observatorio de Economía
+            </div>
+            <div class="hero-logo-wrap">
+                <img src="/static/img/chakana.svg" alt="Chakana Sur en Precios" width="76" height="76" class="brand-logo hero-logo" data-tokens="--color-logo-glow">
+            </div>
+            <h1 class="hero-title" data-tokens="--color-text-strong --color-accent --color-accent-secondary">
+                Sur en <span data-tokens="--color-accent --color-accent-secondary">Precios</span>
+            </h1>
+            <p class="hero-subtitle" data-tokens="--color-text-muted">
+                Vista integral de componentes UI alimentados exclusivamente por los 41 tokens de color de <code>style.css</code> y sus tintes derivados por <code>color-mix()</code>.
+            </p>
+
+            <div class="hero-search-card" data-tokens="--color-surface-glass --color-border --color-shadow">
+                <div class="hero-search-bar">
+                    <div class="search-field search-field-query">
+                        <label for="ks_search_q" class="search-field-label" data-tokens="--color-text-muted">Producto, marca o código EAN</label>
+                        <input type="search" id="ks_search_q" value="Yerba Mate Playadito 1 Kg" data-tokens="--color-surface-input --color-border --color-text-strong --color-accent">
+                    </div>
+                    <div class="search-field search-field-city">
+                        <label for="ks_search_city" class="search-field-label" data-tokens="--color-text-muted">Ciudad</label>
+                        <select id="ks_search_city" data-tokens="--color-surface-input --color-border --color-text-strong">
+                            <option value="Comodoro Rivadavia" selected>Comodoro Rivadavia</option>
+                            <option value="Trelew">Trelew</option>
+                            <option value="Puerto Madryn">Puerto Madryn</option>
+                            <option value="Esquel">Esquel</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-lg" data-tokens="--color-accent --color-accent-hover --color-text-on-accent">
+                        Buscar <span aria-hidden="true">🔍</span>
+                    </button>
+                </div>
+                <div class="hero-chips">
+                    <span class="hero-chips-label" data-tokens="--color-text-subtle">Sugerencias:</span>
+                    <a href="#prices-showcase" class="chip" data-tokens="--color-surface-elevated --color-border --color-text">🧉 Yerba Mate</a>
+                    <a href="#prices-showcase" class="chip" data-tokens="--color-surface-elevated --color-border --color-text">🥛 Leche Fluida</a>
+                    <a href="#prices-showcase" class="chip" data-tokens="--color-surface-elevated --color-border --color-text">🌻 Aceite Girasol</a>
+                    <a href="#prices-showcase" class="chip" data-tokens="--color-surface-elevated --color-border --color-text">🍝 Fideos Secos</a>
+                </div>
+            </div>
+
+            <div class="hero-actions">
+                <button type="button" class="btn" data-tokens="--color-accent --color-accent-hover --color-text-on-accent">Botón Primario</button>
+                <button type="button" class="btn btn-secondary" data-tokens="--color-surface-elevated --color-border --color-text">Botón Secundario</button>
+                <button type="button" class="btn btn-success" data-tokens="--color-success --color-success-hover --color-text-on-accent">⚡ Optimizar Precios</button>
+                <button type="button" class="btn btn-danger" data-tokens="--color-danger --color-text-on-danger">Eliminar Canasta</button>
+                <button type="button" class="btn btn-outline" data-tokens="--color-border --color-text">Botón Contorno</button>
+                <button type="button" class="btn" disabled data-tokens="--color-surface-disabled --color-border-disabled --color-text-muted">Deshabilitado</button>
+            </div>
+        </section>
+
+        <!-- 3. Alerts, Flash Messages, Badges & Callouts -->
+        <section class="card" id="status-showcase" data-tokens="--color-surface --color-border --color-shadow">
+            <div class="card-header-bar">
+                <h2 class="card-header-title" data-tokens="--color-accent">🔔 Alertas, Insignias y Estados Semánticos</h2>
+                <code class="code-pill" data-tokens="--color-code-bg-soft --color-border --color-accent">@group Colors: Brand &amp; Semantic Status</code>
+            </div>
+
+            <div class="flash-card flash-success" data-tokens="--color-success --color-text">
+                ✅ <strong>Éxito:</strong> La canasta familiar fue actualizada y optimizada correctamente entre 4 cadenas de supermercados.
+            </div>
+            <div class="flash-card flash-warning" data-tokens="--color-warning --color-text">
+                ⚠️ <strong>Atención:</strong> Dos sucursales aún no reportaron el relevamiento SEPA correspondiente a la fecha de hoy.
+            </div>
+            <div class="flash-card flash-error" data-tokens="--color-danger --color-text">
+                ❌ <strong>Error:</strong> El código de barras EAN ingresado no registra precios vigentes en la localidad seleccionada.
+            </div>
+            <div class="flash-card flash-info" data-tokens="--color-accent --color-text">
+                ℹ️ <strong>Información:</strong> Los precios de referencia se calculan mediante la media geométrica diaria oficial.
+            </div>
+
+            <div class="action-row">
+                <span class="badge badge-info" data-tokens="--color-accent">Info / Ciudad</span>
+                <span class="badge badge-lowest" data-tokens="--color-success">Mejor Precio</span>
+                <span class="badge badge-success" data-tokens="--color-success">Exitoso / Activo</span>
+                <span class="badge badge-warning" data-tokens="--color-warning">Referencia / Beta</span>
+                <span class="badge badge-danger" data-tokens="--color-danger">Error / Precio Máximo</span>
+                <span class="badge badge-private" data-tokens="--color-text --color-border">Canasta Privada</span>
+                <span class="badge badge-active" data-tokens="--color-accent">Unidad Académica</span>
+                <span class="badge badge-reserved" data-tokens="--color-reserved-border-hover --color-reserved-badge-border --color-reserved-accent">Espacio Reservado</span>
+                <code class="code-pill" data-tokens="--color-bg --color-border --color-accent">EAN: 7793704000016</code>
+            </div>
+
+            <div class="grid">
+                <div class="callout callout-info" data-tokens="--color-accent --color-surface-subtle">
+                    <strong>Callout Informativo:</strong> Los tintes suaves derivan automáticamente con <code>color-mix(in srgb, var(--color-accent) ...)</code>.
+                </div>
+                <div class="callout callout-warning" data-tokens="--color-warning --color-surface-subtle">
+                    <strong>Callout de Advertencia:</strong> Verifica el contraste del texto principal y secundario sobre superficies sutiles.
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Price Statistics, Dispersion & Store Table -->
+        <section class="card" id="prices-showcase" data-tokens="--color-surface --color-border --color-shadow">
+            <div class="modal-header" data-tokens="--color-border-divider">
+                <div>
+                    <h2 class="modal-title" data-tokens="--color-text-strong">Yerba Mate Playadito Con Palo 1 Kg</h2>
+                    <div class="modal-meta" data-tokens="--color-text-muted">
+                        <span>Marca: <strong data-tokens="--color-text-strong">Playadito</strong></span> |
+                        <span>Envase: 1 kg</span> |
+                        <span>Categoría: Almacén &gt; Yerba Mate</span>
+                    </div>
+                    <div class="modal-identifiers">
+                        <code class="code-pill" data-tokens="--color-bg --color-border --color-accent">EAN: 7793704000016</code>
+                        <small class="modal-date" data-tokens="--color-text-subtle">Fecha: 2026-11-18</small>
+                        <span class="badge badge-info" data-tokens="--color-accent">Comodoro Rivadavia</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card stat-min" data-tokens="--color-success --color-surface-deep">
+                    <small class="stat-label" data-tokens="--color-text-muted">Precio Mínimo</small>
+                    <div class="stat-val stat-val-toned" data-tokens="--color-success">$3.950 ARS</div>
+                    <small class="stat-meta" data-tokens="--color-text-subtle">La Anónima (Sucursal Km 3)</small>
+                </div>
+                <div class="stat-card stat-ref" data-tokens="--color-warning --color-surface-deep">
+                    <small class="stat-label" data-tokens="--color-text-muted">Precio Referencia</small>
+                    <div class="stat-val stat-val-toned" data-tokens="--color-warning">$4.345 ARS</div>
+                    <small class="stat-meta" data-tokens="--color-text-subtle">Media geométrica SEPA</small>
+                </div>
+                <div class="stat-card stat-max" data-tokens="--color-danger --color-surface-deep">
+                    <small class="stat-label" data-tokens="--color-text-muted">Precio Máximo</small>
+                    <div class="stat-val stat-val-toned" data-tokens="--color-danger">$4.850 ARS</div>
+                    <small class="stat-meta" data-tokens="--color-text-subtle">Híper ChangoMâs (Av. Yrigoyen)</small>
+                </div>
+            </div>
+
+            <div class="modal-dispersion-bar" data-tokens="--color-surface-subtle --color-border">
+                <span data-tokens="--color-text">Dispersión de Precios: <strong data-tokens="--color-text-strong">20.7%</strong></span>
+                <span class="price-savings" data-tokens="--color-success">Ahorro potencial: $900 ARS por unidad</span>
+            </div>
+
+            <div class="modal-table-wrap" data-tokens="--color-border-subtle">
+                <table class="modal-table" data-tokens="--color-border --color-surface">
+                    <thead>
+                        <tr data-tokens="--color-surface-subtle --color-accent">
+                            <th data-tokens="--color-accent">Comercio</th>
+                            <th data-tokens="--color-accent">Localidad</th>
+                            <th data-tokens="--color-accent">Precio Lista</th>
+                            <th data-tokens="--color-accent">Precio Unitario</th>
+                            <th data-tokens="--color-accent">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr data-tokens="--color-surface --color-border-subtle">
+                            <td>
+                                <strong data-tokens="--color-text-strong">La Anónima</strong>
+                                <br><small class="branch-subtitle" data-tokens="--color-text-muted">Sucursal Km 3 · Av. Tehuelches 120</small>
+                            </td>
+                            <td data-tokens="--color-text">Comodoro Rivadavia</td>
+                            <td><strong class="price-min" data-tokens="--color-success">$3.950 ARS</strong></td>
+                            <td data-tokens="--color-text-muted">$3.950,00 / kg</td>
+                            <td><span class="badge badge-lowest" data-tokens="--color-success">Mínimo</span></td>
+                        </tr>
+                        <tr data-tokens="--color-surface-subtle --color-border-subtle">
+                            <td>
+                                <strong data-tokens="--color-text-strong">Carrefour Market</strong>
+                                <br><small class="branch-subtitle" data-tokens="--color-text-muted">Centro Rivadavia · San Martín 850</small>
+                            </td>
+                            <td data-tokens="--color-text">Comodoro Rivadavia</td>
+                            <td><strong class="price-normal" data-tokens="--color-text-strong">$4.350 ARS</strong></td>
+                            <td data-tokens="--color-text-muted">$4.350,00 / kg</td>
+                            <td><span class="badge badge-info" data-tokens="--color-accent">Promedio</span></td>
+                        </tr>
+                        <tr data-tokens="--color-surface --color-border-subtle">
+                            <td>
+                                <strong data-tokens="--color-text-strong">Híper ChangoMâs</strong>
+                                <br><small class="branch-subtitle" data-tokens="--color-text-muted">Av. Hipólito Yrigoyen 2550</small>
+                            </td>
+                            <td data-tokens="--color-text">Comodoro Rivadavia</td>
+                            <td><strong class="price-max" data-tokens="--color-danger">$4.850 ARS</strong></td>
+                            <td data-tokens="--color-text-muted">$4.850,00 / kg</td>
+                            <td><span class="badge badge-danger" data-tokens="--color-danger">Máximo</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 5. Forms, Cards & Surface Variations -->
+        <section class="grid" id="forms-showcase">
+            <div class="card card-accent-info" data-tokens="--color-surface --color-accent --color-border">
+                <h3 class="card-title-accent" data-tokens="--color-accent">📝 Controles de Formulario e Inputs</h3>
+                <p data-tokens="--color-text-muted">
+                    Verifica bordes (<code>--color-border</code>), fondo de entrada (<code>--color-surface-input</code>) y anillos de foco (<code>--color-accent-focus-ring</code>).
+                </p>
+                <div class="form-group">
+                    <label for="ks_input_name" data-tokens="--color-text">Nombre de la Canasta</label>
+                    <input type="text" id="ks_input_name" value="Canasta Básica Patagónica" data-tokens="--color-surface-input --color-border --color-text-strong">
+                </div>
+                <div class="form-group">
+                    <label for="ks_input_disabled" data-tokens="--color-text-muted">Campo Deshabilitado / Solo Lectura</label>
+                    <input type="text" id="ks_input_disabled" value="UUID: 8f14e45f-ceea-467a-a837" disabled data-tokens="--color-surface-disabled --color-border-disabled --color-text-subtle">
+                </div>
+                <div class="form-group">
+                    <label for="ks_textarea" data-tokens="--color-text">Lista rápida de códigos EAN</label>
+                    <textarea id="ks_textarea" rows="2" data-tokens="--color-surface-input --color-border --color-text-strong">7793704000016 2
+7790742000018 4</textarea>
+                </div>
+                <div class="action-row">
+                    <label data-tokens="--color-text">
+                        <input type="checkbox" checked data-tokens="--color-accent"> Canasta pública compartible
+                    </label>
+                    <label data-tokens="--color-text">
+                        <input type="radio" name="ks_radio" checked data-tokens="--color-accent"> Media geométrica
+                    </label>
+                </div>
+            </div>
+
+            <div class="card card-accent-success" id="admin-showcase" data-tokens="--color-surface --color-success --color-border">
+                <h3 class="card-title-accent" data-tokens="--color-accent">階層 de Superficies y Tarjetas Anidadas</h3>
+                <p data-tokens="--color-text">
+                    Contraste entre <code>--color-surface</code> (tarjeta exterior), <code>--color-surface-elevated</code> (tarjeta interior), <code>--color-surface-deep</code> y <code>--color-surface-hover</code>.
+                </p>
+                <div class="card card-inset" data-tokens="--color-surface-elevated --color-border">
+                    <h4 class="card-inset-title" data-tokens="--color-accent">Superficie Elevada (.card-inset)</h4>
+                    <p class="card-inset-meta" data-tokens="--color-text-muted">
+                        Utilizada en modales, paneles de administración, tarjetas internas y cabeceras flotantes.
+                    </p>
+                    <div class="action-row-compact">
+                        <span class="footer-badge" data-tokens="--color-surface-elevated --color-border --color-accent">Red/Green Slot: GREEN</span>
+                        <span class="footer-badge" data-tokens="--color-surface-elevated --color-border --color-accent">SQLite Immutable</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. Institutional & Reserved Spaces (UNPSJB) -->
+        <section class="landing-section" id="institucional-showcase">
+            <div class="section-header">
+                <span class="section-tag section-tag-reserved" data-tokens="--color-reserved-accent --color-reserved-border">
+                    @group Colors: Institutional Reserved Spaces
+                </span>
+                <h2 class="section-title" data-tokens="--color-text-strong">Marco Institucional y Espacios Reservados UNPSJB</h2>
+                <p class="section-desc" data-tokens="--color-text-muted">
+                    Tarjetas académicas con identidad cromática propia para facultades y grupos de investigación.
+                </p>
+            </div>
+
+            <div class="grid">
+                <div class="reserved-card" data-tokens="--color-reserved-surface --color-reserved-border --color-reserved-border-hover">
+                    <span class="badge badge-reserved" data-tokens="--color-reserved-badge-border --color-reserved-accent --color-reserved-border-hover">Espacio Reservado</span>
+                    <h3 data-tokens="--color-reserved-heading">⚙️ Facultad de Ingeniería (UNPSJB)</h3>
+                    <p data-tokens="--color-reserved-text">
+                        Articulación técnica en arquitectura de sistemas, ingeniería de software distribuida, optimización de infraestructura y tratamiento de datos abiertos.
+                    </p>
+                    <div class="reserved-card-meta" data-tokens="--color-reserved-meta">
+                        🔗 <em>Articulación en diseño tecnológico e infraestructura</em>
+                    </div>
+                </div>
+
+                <div class="reserved-card" data-tokens="--color-reserved-surface --color-reserved-border --color-reserved-border-hover">
+                    <span class="badge badge-reserved" data-tokens="--color-reserved-badge-border --color-reserved-accent --color-reserved-border-hover">Espacio Reservado</span>
+                    <h3 data-tokens="--color-reserved-heading">🧠 GI Procesamiento de la Información y Sensores</h3>
+                    <p data-tokens="--color-reserved-text">
+                        Cooperación en modelado matemático avanzado, procesamiento estadístico de señales y detección de anomalías en series temporales de precios.
+                    </p>
+                    <div class="reserved-card-meta" data-tokens="--color-reserved-meta">
+                        🔗 <em>Articulación en modelos predictivos y analítica computacional</em>
+                    </div>
+                </div>
+
+                <article class="inst-box" data-tokens="--color-surface --color-border --color-accent">
+                    <span class="badge badge-active" data-tokens="--color-accent">Unidad Académica Responsable</span>
+                    <h3 data-tokens="--color-text-strong">📈 Facultad de Ciencias Económicas (FCE - UNPSJB)</h3>
+                    <p data-tokens="--color-text">
+                        Observatorio de Economía de los Recursos Naturales de la Patagonia (OERNP), responsable del relevamiento y análisis socioeconómico regional.
+                    </p>
+                    <div class="inst-meta" data-tokens="--color-text-muted --color-border-divider">
+                        <span>📍 <strong>Sede:</strong> Ruta Provincial 3 Km 4, Comodoro Rivadavia</span>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <!-- 7. Site Footer -->
+    <footer class="site-footer" data-tokens="--color-surface-footer --color-border-footer --color-text">
+        <div class="footer-container">
+            <div class="footer-brand-section">
+                <div class="footer-brand">
+                    <img src="/static/img/chakana.svg" alt="Chakana" width="32" height="32" data-tokens="--color-logo-glow">
+                    <h3 data-tokens="--color-accent">Sur en Precios</h3>
+                </div>
+                <p class="footer-desc" data-tokens="--color-text-muted">
+                    Plataforma pública y comunitaria de monitoreo, comparación y optimización de precios de supermercados para la Patagonia.
+                </p>
+                <div class="footer-tags">
+                    <span class="footer-badge" data-tokens="--color-surface-elevated --color-border --color-accent">UNPSJB</span>
+                    <span class="footer-badge" data-tokens="--color-surface-elevated --color-border --color-accent">FCE</span>
+                    <span class="footer-badge" data-tokens="--color-surface-elevated --color-border --color-accent">OERNP</span>
+                    <span class="footer-badge" data-tokens="--color-surface-elevated --color-border --color-accent">SEPA Precios Claros</span>
+                </div>
+            </div>
+            <div class="footer-col">
+                <h4 data-tokens="--color-text-strong --color-accent">Navegación</h4>
+                <ul>
+                    <li><a href="#hero-showcase" data-tokens="--color-text-muted --color-accent">Inicio y Buscador</a></li>
+                    <li><a href="#prices-showcase" data-tokens="--color-text-muted --color-accent">Estadísticas de Precios</a></li>
+                    <li><a href="#institucional-showcase" data-tokens="--color-text-muted --color-accent">Marco Institucional</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4 data-tokens="--color-text-strong --color-accent">Sede y Contacto</h4>
+                <p class="footer-contact-text" data-tokens="--color-text-muted">
+                    📍 Ciudad Universitaria, Ruta 3 Km 4, Comodoro Rivadavia
+                </p>
+                <p class="footer-contact-text">
+                    ✉️ <a href="#contacto" class="footer-contact-link" data-tokens="--color-accent">observatorioFCE@gmail.com</a>
+                </p>
+                <p class="footer-contact-note" data-tokens="--color-text-subtle">
+                    Relevamiento diario de datos abiertos oficiales de Precios Claros (SEPA).
+                </p>
+            </div>
+        </div>
+        <div class="footer-bottom" data-tokens="--color-border-divider --color-text-subtle">
+            <p>&copy; 2026 Sur en Precios — Observatorio de Economía de los Recursos Naturales de la Patagonia (FCE - UNPSJB).</p>
+        </div>
+    </footer>
+</body>
+</html>

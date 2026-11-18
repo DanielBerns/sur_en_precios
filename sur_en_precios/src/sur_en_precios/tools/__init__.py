@@ -7,6 +7,7 @@ __all__ = [
     "run_daily_update",
     "run_etl",
     "run_harvest",
+    "run_style_editor",
     "start",
     "sync_client",
 ]
