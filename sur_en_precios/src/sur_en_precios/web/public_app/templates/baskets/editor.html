@@ -136,8 +136,19 @@
                     </label>
                 </div>
 
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                    <label for="search_city" class="search-field-label" style="display: block; margin-bottom: 0.3rem;">{{ _('Ciudad') }}</label>
+                    <select id="search_city">
+                        <option value="">{{ _('Todas las ciudades') }}</option>
+                        {% for c in cities %}
+                        <option value="{{ c }}">{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 <div style="display: flex; gap: 0.5rem;">
-                    <input type="text" id="search_input" placeholder="{{ _('Buscar producto (ej. leche, arroz, quilmes)...') }}" onkeydown="if(event.key==='Enter'){event.preventDefault();searchArticles();}">
+                    <label for="search_input" class="visually-hidden">{{ _('Buscar producto') }}</label>
+                    <input type="search" id="search_input" placeholder="{{ _('Buscar producto (ej. leche, arroz, quilmes)...') }}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" onkeydown="if(event.key==='Enter' && !event.isComposing){event.preventDefault();searchArticles();}">
                     <button type="button" onclick="searchArticles()" class="btn">{{ _('Buscar') }}</button>
                 </div>
             </div>
@@ -373,7 +384,7 @@
 
     let currentSearchPage = 1;
 
-    function renderArticleResults(data) {
+    function renderArticleResults(data, activeCity = '') {
         const container = document.getElementById('search_results_container');
         const btnAll = document.getElementById('btn_add_all_found');
         const countSpan = document.getElementById('search_results_count');
@@ -428,11 +439,16 @@
             catSpan.textContent = item.category || '-';
 
             const eanLink = document.createElement('a');
-            eanLink.href = '/article/' + encodeURIComponent(item.ean);
+            eanLink.href = activeCity
+                ? '/article/' + encodeURIComponent(item.ean) + '?city=' + encodeURIComponent(activeCity)
+                : '/article/' + encodeURIComponent(item.ean);
             eanLink.className = 'ean-link';
             eanLink.style.padding = '0';
+            if (activeCity) {
+                eanLink.dataset.city = activeCity;
+            }
             eanLink.onclick = function(e) { openPriceStatsModal(e, item.ean); };
-            eanLink.innerHTML = `<code>${item.ean}</code> 📊`;
+            eanLink.innerHTML = `<code>${escapeHtml(item.ean)}</code> 📊`;
 
             subDiv.appendChild(brandSpan);
             subDiv.appendChild(document.createTextNode(' | '));
@@ -513,6 +529,8 @@
 
         currentSearchPage = page;
         const mode = document.getElementById('mode_exact').checked ? 'exact' : 'fuzzy';
+        const cityEl = document.getElementById('search_city');
+        const city = cityEl ? cityEl.value.trim() : '';
         const container = document.getElementById('search_results_container');
         const btnAll = document.getElementById('btn_add_all_found');
         const countSpan = document.getElementById('search_results_count');
@@ -531,10 +549,11 @@
 
         container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: var(--accent);">Buscando productos...</div>';
 
-        fetch('{{ url_for("api.api_search_articles") }}?q=' + encodeURIComponent(q) + '&mode=' + mode + '&page=' + page + '&per_page=20&paginated=1')
+        const cityParam = city ? '&city=' + encodeURIComponent(city) : '';
+        fetch('{{ url_for("api.api_search_articles") }}?q=' + encodeURIComponent(q) + '&mode=' + mode + cityParam + '&page=' + page + '&per_page=20&paginated=1')
             .then(r => r.json())
             .then(data => {
-                renderArticleResults(data);
+                renderArticleResults(data, city);
             })
             .catch(err => {
                 container.innerHTML = '<div style="text-align: center; padding: 2rem 0; color: var(--danger);">Error al buscar artículos.</div>';

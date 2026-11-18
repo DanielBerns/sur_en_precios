@@ -21,35 +21,50 @@
 
     <!-- Hero Search Bar -->
     <div class="hero-search-card" id="buscador">
-        <form method="GET" action="{{ url_for('catalog.index') }}">
-            <div class="hero-search-bar">
-                <input type="text" name="q" placeholder="Buscar por producto, marca o código EAN (ej: leche, arroz, fideos)..." autofocus required>
-                <button type="submit" class="btn btn-lg">Buscar 🔍</button>
-            </div>
-            
-            <div class="mode-selector" style="justify-content: center; margin-bottom: 0.5rem;">
-                <label>
-                    <input type="radio" name="mode" value="fuzzy" checked>
-                    {{ _('Búsqueda flexible (aproximada)') }}
-                </label>
-                <label style="margin-left: 1.5rem;">
-                    <input type="radio" name="mode" value="exact">
-                    {{ _('Búsqueda exacta') }}
-                </label>
-            </div>
+        <search>
+            <form method="GET" action="{{ url_for('catalog.index') }}">
+                <div class="hero-search-bar">
+                    <div class="search-field search-field-query">
+                        <label for="hero_search_q" class="search-field-label">{{ _('Producto, marca o código EAN') }}</label>
+                        <input type="search" id="hero_search_q" name="q" placeholder="{{ _('Ej: leche, arroz, fideos, 779...') }}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" autofocus required>
+                    </div>
+                    <div class="search-field search-field-city">
+                        <label for="hero_search_city" class="search-field-label">{{ _('Ciudad') }}</label>
+                        <select id="hero_search_city" name="city">
+                            <option value="" {% if not selected_city %}selected{% endif %}>{{ _('Todas las ciudades') }}</option>
+                            {% for c in cities %}
+                            <option value="{{ c }}" {% if c == selected_city %}selected{% endif %}>{{ c }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-lg">{{ _('Buscar') }} <span aria-hidden="true">🔍</span></button>
+                </div>
+                
+                <fieldset class="mode-selector" style="justify-content: center; margin-bottom: 0.5rem;">
+                    <legend class="visually-hidden">{{ _('Modo de búsqueda') }}</legend>
+                    <span class="mode-option">
+                        <input type="radio" id="hero_mode_fuzzy" name="mode" value="fuzzy" checked>
+                        <label for="hero_mode_fuzzy">{{ _('Búsqueda flexible (aproximada)') }}</label>
+                    </span>
+                    <span class="mode-option" style="margin-inline-start: 1.25rem;">
+                        <input type="radio" id="hero_mode_exact" name="mode" value="exact">
+                        <label for="hero_mode_exact">{{ _('Búsqueda exacta') }}</label>
+                    </span>
+                </fieldset>
 
-            <div class="hero-chips">
-                <span class="hero-chips-label">Búsquedas sugeridas:</span>
-                <a href="{{ url_for('catalog.index', q='leche') }}" class="chip">🥛 Leche</a>
-                <a href="{{ url_for('catalog.index', q='arroz') }}" class="chip">🍚 Arroz</a>
-                <a href="{{ url_for('catalog.index', q='fideos') }}" class="chip">🍝 Fideos</a>
-                <a href="{{ url_for('catalog.index', q='aceite') }}" class="chip">🌻 Aceite</a>
-                <a href="{{ url_for('catalog.index', q='harina') }}" class="chip">🌾 Harina</a>
-                <a href="{{ url_for('catalog.index', q='yerba') }}" class="chip">🧉 Yerba</a>
-                <a href="{{ url_for('catalog.index', q='azucar') }}" class="chip">🍬 Azúcar</a>
-                <a href="{{ url_for('catalog.index', q='detergente') }}" class="chip">🧼 Detergente</a>
-            </div>
-        </form>
+                <div class="hero-chips">
+                    <span class="hero-chips-label">Búsquedas sugeridas:</span>
+                    <a href="{{ url_for('catalog.index', q='leche', city=selected_city or None) }}" class="chip" data-chip-query="leche">🥛 Leche</a>
+                    <a href="{{ url_for('catalog.index', q='arroz', city=selected_city or None) }}" class="chip" data-chip-query="arroz">🍚 Arroz</a>
+                    <a href="{{ url_for('catalog.index', q='fideos', city=selected_city or None) }}" class="chip" data-chip-query="fideos">🍝 Fideos</a>
+                    <a href="{{ url_for('catalog.index', q='aceite', city=selected_city or None) }}" class="chip" data-chip-query="aceite">🌻 Aceite</a>
+                    <a href="{{ url_for('catalog.index', q='harina', city=selected_city or None) }}" class="chip" data-chip-query="harina">🌾 Harina</a>
+                    <a href="{{ url_for('catalog.index', q='yerba', city=selected_city or None) }}" class="chip" data-chip-query="yerba">🧉 Yerba</a>
+                    <a href="{{ url_for('catalog.index', q='azucar', city=selected_city or None) }}" class="chip" data-chip-query="azucar">🍬 Azúcar</a>
+                    <a href="{{ url_for('catalog.index', q='detergente', city=selected_city or None) }}" class="chip" data-chip-query="detergente">🧼 Detergente</a>
+                </div>
+            </form>
+        </search>
     </div>
 
     <div class="hero-actions" style="margin-top: 2rem;">
@@ -345,4 +360,27 @@
         <a href="{{ url_for('catalog.help') }}" class="btn btn-sm btn-outline">Consultar la Guía de Ayuda Completa &rarr;</a>
     </div>
 </section>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    (function() {
+        const citySelect = document.getElementById("hero_search_city");
+        const chips = document.querySelectorAll(".hero-chips a[data-chip-query]");
+        if (!citySelect || !chips.length) return;
+        const baseSearchUrl = {{ url_for('catalog.index') | tojson }};
+        function syncChipLinks() {
+            const city = citySelect.value.trim();
+            chips.forEach(function(chip) {
+                const q = chip.dataset.chipQuery || "";
+                const params = new URLSearchParams();
+                if (q) params.set("q", q);
+                if (city) params.set("city", city);
+                chip.href = baseSearchUrl + "?" + params.toString();
+            });
+        }
+        citySelect.addEventListener("change", syncChipLinks);
+        syncChipLinks();
+    })();
+</script>
 {% endblock %}

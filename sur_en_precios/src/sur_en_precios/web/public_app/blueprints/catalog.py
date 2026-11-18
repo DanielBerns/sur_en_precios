@@ -1,7 +1,9 @@
 import logging
+from typing import Literal
 
 from flask import (
     Blueprint,
+    current_app,
     flash,
     redirect,
     render_template,
@@ -13,6 +15,7 @@ from flask_babel import gettext as _
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
+from sur_en_precios.domain.cleaner.text_utils import strip_accents
 from sur_en_precios.domain.models_public import Category
 from sur_en_precios.web.public_app.database import (
     get_catalog_repository,
@@ -32,10 +35,35 @@ logger = logging.getLogger("sur_en_precios.public_app.catalog")
 catalog_bp = Blueprint("catalog", __name__)
 
 
-@catalog_bp.route("/")
-def index():
+def _resolve_search_cities(cat_repo, req_city: str | None) -> tuple[list[str], str]:
+    """Returns available region cities and the canonical selected city ('' for all cities)."""
+    config = current_app.config["APP_CONFIG"]
+    cities = list(cat_repo.get_cities_for_region(config.get_region()))
+    if not req_city:
+        return cities, ""
+
+    req_lower = req_city.lower()
+    matching_city = next((c for c in cities if c.lower() == req_lower), None)
+    if matching_city:
+        return cities, matching_city
+
+    req_unaccent = strip_accents(req_lower)
+    matching_unaccent = next(
+        (c for c in cities if strip_accents(c.lower()) == req_unaccent),
+        None,
+    )
+    if matching_unaccent:
+        return cities, matching_unaccent
+
+    cities.append(req_city)
+    return cities, req_city
+
+
+def _parse_search_params() -> ArticleSearchQuery:
+    """Parses and clamps search query parameters from the current Flask request."""
     query_param = request.args.get("q", "")
     mode_param = request.args.get("mode", "fuzzy")
+    city_param = request.args.get("city")
     page_param = request.args.get("page", 1)
     per_page_param = request.args.get("per_page", 20)
 
@@ -49,24 +77,34 @@ def index():
     except (ValueError, TypeError):
         per_page = 20
 
-    mode = mode_param if mode_param in ("fuzzy", "exact") else "fuzzy"
-    params = ArticleSearchQuery(
+    mode: Literal["fuzzy", "exact"] = "exact" if mode_param == "exact" else "fuzzy"
+    return ArticleSearchQuery(
         q=query_param,
         mode=mode,
+        city=city_param,
         page=page,
         per_page=per_page,
     )
+
+
+@catalog_bp.route("/")
+def index():
+    params = _parse_search_params()
     if params.q:
         products = []
         total_count = 0
+        cities: list[str] = []
+        selected_city = params.city or ""
         try:
-            with get_public_session() as session:
-                cat_repo = get_catalog_repository(session)
+            with get_public_session() as pub_session:
+                cat_repo = get_catalog_repository(pub_session)
+                cities, selected_city = _resolve_search_cities(cat_repo, params.city)
                 products, total_count = cat_repo.search_articles_paginated(
                     query=params.q,
                     page=params.page,
                     per_page=params.per_page,
                     mode=params.mode,
+                    city=selected_city or None,
                 )
         except Exception as exc:
             logger.error("Error searching in index: %s", exc)
@@ -82,82 +120,78 @@ def index():
             "catalog/index.html",
             query=params.q,
             mode=params.mode,
+            cities=cities,
+            selected_city=selected_city,
             products=products,
             pagination=pagination,
         )
 
     # When no query is provided, render the rich institutional landing page
     departments = []
+    cities = []
+    selected_city = params.city or ""
     try:
-        with get_public_session() as session:
-            cat_repo = get_catalog_repository(session)
+        with get_public_session() as pub_session:
+            cat_repo = get_catalog_repository(pub_session)
             departments = cat_repo.get_departments()
+            cities, selected_city = _resolve_search_cities(cat_repo, params.city)
     except Exception as exc:
-        logger.debug("Could not load departments for landing page: %s", exc)
+        logger.debug("Could not load landing page catalog metadata: %s", exc)
 
     return render_template(
         "catalog/landing.html",
         departments=departments,
+        cities=cities,
+        selected_city=selected_city,
     )
 
 
 @catalog_bp.route("/inicio")
 @catalog_bp.route("/landing")
 def landing():
+    params = _parse_search_params()
     departments = []
+    cities: list[str] = []
+    selected_city = params.city or ""
     try:
-        with get_public_session() as session:
-            cat_repo = get_catalog_repository(session)
+        with get_public_session() as pub_session:
+            cat_repo = get_catalog_repository(pub_session)
             departments = cat_repo.get_departments()
+            cities, selected_city = _resolve_search_cities(cat_repo, params.city)
     except Exception as exc:
-        logger.debug("Could not load departments for landing page: %s", exc)
+        logger.debug("Could not load landing page catalog metadata: %s", exc)
 
     return render_template(
         "catalog/landing.html",
         departments=departments,
+        cities=cities,
+        selected_city=selected_city,
     )
 
 
 @catalog_bp.route("/buscar")
 @catalog_bp.route("/productos")
 def search_view():
-    query_param = request.args.get("q", "")
-    mode_param = request.args.get("mode", "fuzzy")
-    page_param = request.args.get("page", 1)
-    per_page_param = request.args.get("per_page", 20)
-
-    try:
-        page = max(1, int(page_param))
-    except (ValueError, TypeError):
-        page = 1
-
-    try:
-        per_page = max(1, min(500, int(per_page_param)))
-    except (ValueError, TypeError):
-        per_page = 20
-
-    mode = mode_param if mode_param in ("fuzzy", "exact") else "fuzzy"
-    params = ArticleSearchQuery(
-        q=query_param,
-        mode=mode,
-        page=page,
-        per_page=per_page,
-    )
+    params = _parse_search_params()
     products = []
     total_count = 0
-    if params.q:
-        try:
-            with get_public_session() as session:
-                cat_repo = get_catalog_repository(session)
+    cities: list[str] = []
+    selected_city = params.city or ""
+    try:
+        with get_public_session() as pub_session:
+            cat_repo = get_catalog_repository(pub_session)
+            cities, selected_city = _resolve_search_cities(cat_repo, params.city)
+            if params.q:
                 products, total_count = cat_repo.search_articles_paginated(
                     query=params.q,
                     page=params.page,
                     per_page=params.per_page,
                     mode=params.mode,
+                    city=selected_city or None,
                 )
-        except Exception as exc:
-            logger.error("Error searching: %s", exc)
-            flash(_("Ocurrió un error al realizar la búsqueda."), "error")
+    except Exception as exc:
+        logger.error("Error searching: %s", exc)
+        flash(_("Ocurrió un error al realizar la búsqueda."), "error")
 
     pagination = Pagination(
         page=params.page,
@@ -169,6 +203,8 @@ def search_view():
         "catalog/index.html",
         query=params.q,
         mode=params.mode,
+        cities=cities,
+        selected_city=selected_city,
         products=products,
         pagination=pagination,
     )

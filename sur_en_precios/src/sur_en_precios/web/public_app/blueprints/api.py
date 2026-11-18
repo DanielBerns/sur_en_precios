@@ -25,6 +25,7 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 @api_bp.route("/articles/search")
 def api_search_articles():
+    raw_city = request.args.get("city")
     try:
         raw_limit = request.args.get("limit", type=int)
         raw_page = request.args.get("page", 1, type=int)
@@ -32,6 +33,7 @@ def api_search_articles():
         query = ArticleSearchQuery(
             q=request.args.get("q", ""),
             mode=request.args.get("mode", "fuzzy"),
+            city=raw_city,
             limit=raw_limit,
             page=raw_page if raw_page else 1,
             per_page=raw_per_page if raw_per_page else 20,
@@ -40,6 +42,7 @@ def api_search_articles():
         query = ArticleSearchQuery(
             q=request.args.get("q", ""),
             mode="fuzzy",
+            city=raw_city,
             limit=None,
             page=1,
             per_page=20,
@@ -58,6 +61,7 @@ def api_search_articles():
                     page=query.page,
                     per_page=query.per_page,
                     mode=query.mode,
+                    city=query.city,
                 )
                 items_payload = [
                     ArticleSearchResultSchema(
@@ -85,7 +89,10 @@ def api_search_articles():
                 return resp
             else:
                 results = cat_repo.search_articles(
-                    query.q, limit=query.limit, mode=query.mode
+                    query.q,
+                    limit=query.limit,
+                    mode=query.mode,
+                    city=query.city,
                 )
                 payload = [
                     ArticleSearchResultSchema(
@@ -101,9 +108,10 @@ def api_search_articles():
                 return resp
     except Exception as exc:
         logger.error(
-            "API article search error (q=%r, mode=%s): %s",
+            "API article search error (q=%r, mode=%s, city=%r): %s",
             query.q,
             query.mode,
+            query.city,
             exc,
         )
         return jsonify([]), 500

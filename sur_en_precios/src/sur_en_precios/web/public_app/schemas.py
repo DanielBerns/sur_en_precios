@@ -71,14 +71,30 @@ class Pagination:
                 last = num
 
 
+def _normalize_city_value(value: Any) -> Optional[str]:
+    """Normalizes optional city query parameter; empty or 'all' means all cities."""
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    if not cleaned or cleaned.lower() == "all":
+        return None
+    return cleaned
+
+
 class ArticleSearchQuery(BaseModel):
     """Query parameters for article text search."""
 
     q: str = ""
     mode: Literal["fuzzy", "exact"] = "fuzzy"
+    city: Optional[str] = None
     limit: Optional[int] = Field(default=None, ge=1)
     page: int = Field(default=1, ge=1)
     per_page: int = Field(default=20, ge=1, le=500)
+
+    @field_validator("city", mode="before")
+    @classmethod
+    def clean_city(cls, v: Any) -> Optional[str]:
+        return _normalize_city_value(v)
 
 
 class CategoryArticlesQuery(BaseModel):
@@ -103,7 +119,7 @@ class ArticlePriceStatsQuery(BaseModel):
                 target_date = dt.date.fromisoformat(date_str.strip())
             except ValueError:
                 target_date = None
-        return cls(city=city, date=target_date)
+        return cls(city=_normalize_city_value(city), date=target_date)
 
 
 class ArticleSearchResultSchema(BaseModel):

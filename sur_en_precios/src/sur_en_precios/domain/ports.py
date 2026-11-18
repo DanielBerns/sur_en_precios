@@ -95,7 +95,11 @@ class CatalogRepositoryPort(ABC):
 
     @abstractmethod
     def search_articles(
-        self, query: str, limit: Optional[int] = None, mode: str = "fuzzy"
+        self,
+        query: str,
+        limit: Optional[int] = None,
+        mode: str = "fuzzy",
+        city: Optional[str] = None,
     ) -> List[ArticleCard]: ...
 
     def search_articles_paginated(
@@ -104,9 +108,10 @@ class CatalogRepositoryPort(ABC):
         page: int = 1,
         per_page: int = 20,
         mode: str = "fuzzy",
+        city: Optional[str] = None,
     ) -> Tuple[List[ArticleCard], int]:
         """Searches articles with pagination, returning (items_for_page, total_count)."""
-        items = self.search_articles(query, limit=per_page, mode=mode)
+        items = self.search_articles(query, limit=per_page, mode=mode, city=city)
         return items, len(items)
 
     @abstractmethod

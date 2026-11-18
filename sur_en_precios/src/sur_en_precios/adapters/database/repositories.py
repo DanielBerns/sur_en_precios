@@ -97,6 +97,16 @@ def _sql_unaccent_lower(col: Any) -> Any:
     return expr
 
 
+def _normalize_city_filter(city: Optional[str]) -> Optional[str]:
+    """Normalizes optional city filter string; empty or 'all' disables city filtering."""
+    if not city:
+        return None
+    cleaned = city.strip()
+    if not cleaned or cleaned.lower() == "all":
+        return None
+    return cleaned
+
+
 def _fast_fuzzy_ratio(q_norm: str, target_norm: str, min_ratio: float = 0.0) -> float:
     """Computes fuzzy_similarity_ratio with an O(1) length-ratio upper-bound short-circuit."""
     if not q_norm or not target_norm:
@@ -374,6 +384,7 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
         page: int = 1,
         per_page: int = 20,
         mode: str = "fuzzy",
+        city: Optional[str] = None,
     ) -> Tuple[List[Article], int]:
         try:
             q = (query or "").strip()
@@ -383,6 +394,43 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             page = max(1, page)
             per_page = max(1, per_page)
 
+            city_clean = _normalize_city_filter(city)
+            city_filter: Any = None
+            if city_clean:
+                city_norm_lower = strip_accents(city_clean.lower())
+                city_store_codes = list(
+                    self._session.execute(
+                        select(PointOfSale.code).where(
+                            _sql_unaccent_lower(PointOfSale.city) == city_norm_lower
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if not city_store_codes:
+                    return [], 0
+                if len(city_store_codes) <= CHUNK_SIZE:
+                    city_filter = (
+                        select(1)
+                        .select_from(DailyPrice)
+                        .where(
+                            DailyPrice.ean == Article.ean,
+                            DailyPrice.store_code.in_(city_store_codes),
+                        )
+                        .exists()
+                    )
+                else:
+                    city_filter = (
+                        select(1)
+                        .select_from(DailyPrice)
+                        .join(PointOfSale, DailyPrice.store_code == PointOfSale.code)
+                        .where(
+                            DailyPrice.ean == Article.ean,
+                            _sql_unaccent_lower(PointOfSale.city) == city_norm_lower,
+                        )
+                        .exists()
+                    )
+
             base_stmt = select(Article).options(
                 joinedload(Article.brand),
                 joinedload(Article.category),
@@ -391,12 +439,10 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
 
             # 1. Exact / Direct EAN search if numeric
             if q.isdigit() and len(q) >= 6:
-                ean_res = (
-                    self._session.execute(base_stmt.where(Article.ean == q))
-                    .scalars()
-                    .unique()
-                    .all()
-                )
+                ean_stmt = base_stmt.where(Article.ean == q)
+                if city_filter is not None:
+                    ean_stmt = ean_stmt.where(city_filter)
+                ean_res = self._session.execute(ean_stmt).scalars().unique().all()
                 if ean_res:
                     total = len(ean_res)
                     start = (page - 1) * per_page
@@ -407,7 +453,7 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
 
             if mode == "exact":
                 norm_pattern = f"%{q_norm}%"
-                filter_cond = (
+                filter_cond: Any = (
                     (_sql_unaccent_lower(Article.name).like(norm_pattern))
                     | (
                         _sql_unaccent_lower(Article.clean_description).like(
@@ -417,6 +463,8 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                     | (_sql_unaccent_lower(Article.brand_name).like(norm_pattern))
                     | (Article.ean == q)
                 )
+                if city_filter is not None:
+                    filter_cond = and_(filter_cond, city_filter)
                 count_stmt = select(func.count(Article.id)).where(filter_cond)
                 total = self._session.execute(count_stmt).scalar() or 0
 
@@ -442,6 +490,8 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
                 Article.brand_name,
                 Category.name,
             ).outerjoin(Category, Article.category_id == Category.id)
+            if city_filter is not None:
+                cand_base = cand_base.where(city_filter)
 
             def _collect_candidates(
                 where_cond: Any, limit_rows: Optional[int] = None
@@ -708,20 +758,25 @@ class SqlAlchemyCatalogRepository(CatalogRepositoryPort):
             ], total
         except Exception as exc:
             logger.error(
-                "Error executing search_articles_paginated (query=%r, mode=%s, page=%s): %s",
+                "Error executing search_articles_paginated (query=%r, mode=%s, city=%r, page=%s): %s",
                 query,
                 mode,
+                city,
                 page,
                 exc,
             )
             raise
 
     def search_articles(
-        self, query: str, limit: Optional[int] = None, mode: str = "fuzzy"
+        self,
+        query: str,
+        limit: Optional[int] = None,
+        mode: str = "fuzzy",
+        city: Optional[str] = None,
     ) -> List[Article]:
         per_page = limit if limit is not None and limit > 0 else 1000000
         items, _ = self.search_articles_paginated(
-            query=query, page=1, per_page=per_page, mode=mode
+            query=query, page=1, per_page=per_page, mode=mode, city=city
         )
         return items
 
@@ -1178,6 +1233,9 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
             target_date = date.fromisoformat(target_date)
 
         # Observed store prices on or before target_date (within 7-day window)
+        city_clean = _normalize_city_filter(city)
+        city_norm_lower = strip_accents(city_clean.lower()) if city_clean else None
+
         price_stmt = (
             select(DailyPrice, PointOfSale)
             .join(PointOfSale, DailyPrice.store_code == PointOfSale.code)
@@ -1185,9 +1243,9 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         )
         if target_date:
             price_stmt = price_stmt.where(DailyPrice.date <= target_date)
-        if city:
+        if city_norm_lower:
             price_stmt = price_stmt.where(
-                func.lower(PointOfSale.city) == func.lower(city.strip())
+                _sql_unaccent_lower(PointOfSale.city) == city_norm_lower
             )
 
         price_stmt = price_stmt.order_by(DailyPrice.date.desc(), DailyPrice.price.asc())
@@ -1223,9 +1281,9 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
         )
         if target_date:
             metric_stmt = metric_stmt.where(DailyProductMetric.date <= target_date)
-        if city:
+        if city_norm_lower:
             metric_stmt = metric_stmt.where(
-                func.lower(DailyProductMetric.city) == func.lower(city.strip())
+                _sql_unaccent_lower(DailyProductMetric.city) == city_norm_lower
             )
         metric_stmt = metric_stmt.order_by(DailyProductMetric.date.desc())
 
@@ -1280,11 +1338,24 @@ class SqlAlchemyPriceRepository(PriceRepositoryPort):
             else None
         )
 
-        resolved_city = city or (
-            store_details[0].city
-            if store_details
-            else (metrics[0].city if metrics else None)
-        )
+        distinct_store_cities = {st.city for st in store_details if st.city}
+        if city_clean:
+            resolved_city: Optional[str] = (
+                store_details[0].city
+                if store_details and store_details[0].city
+                else (metrics[0].city if metrics and metrics[0].city else city_clean)
+            )
+        elif len(distinct_store_cities) == 1:
+            resolved_city = next(iter(distinct_store_cities))
+        elif len(distinct_store_cities) > 1:
+            resolved_city = None
+        else:
+            distinct_metric_cities = {m.city for m in metrics if m.city}
+            resolved_city = (
+                next(iter(distinct_metric_cities))
+                if len(distinct_metric_cities) == 1
+                else None
+            )
 
         display_date = (
             max(dp.date for dp, _ in sorted_stores) if sorted_stores else target_date

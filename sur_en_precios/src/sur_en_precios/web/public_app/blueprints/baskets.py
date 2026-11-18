@@ -153,8 +153,10 @@ def edit_basket(basket_id: int):
                 )
                 return redirect(url_for("baskets.baskets"))
 
+            config = current_app.config["APP_CONFIG"]
             with get_public_session() as pub_session:
                 cat_repo = get_catalog_repository(pub_session)
+                cities = cat_repo.get_cities_for_region(config.get_region())
                 departments = cat_repo.get_departments()
                 departments_data = [
                     {
@@ -194,6 +196,7 @@ def edit_basket(basket_id: int):
                 eans_csv=",".join(eans_list),
                 departments=departments_data,
                 departments_json=json.dumps(departments_data),
+                cities=cities,
             )
     except Exception as exc:
         logger.error("Error loading basket editor: %s", exc)
